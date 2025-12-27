@@ -1,0 +1,16 @@
+{
+  "name": "@ijuantm/simpl-addon",
+  "version": "1.0.0",
+  "description": "CLI tool to install Simpl framework add-ons.",
+  "main": "install-addon.js",
+  "bin": {
+    "simpl-addon": "./install-addon.js"
+  },
+  "scripts": {
+    "test": "node install-addon.js --help"
+  },
+  "author": "Iwan van der Wal",
+  "engines": {
+    "node": ">=24.12.0"
+  }
+}
