@@ -44,8 +44,8 @@ new AuthController();
 
 - `@addon-insert:after('text')` - Insert content after matching line
 - `@addon-insert:before('text')` - Insert content before matching line
-- `@addon-insert:prepend` - Add content at file start
-- `@addon-insert:append` - Add content at file end
+- `@addon-insert:prepend` - Add content at the beginning of the file
+- `@addon-insert:append` - Add content at the end of the file
 
 The installer:
 
@@ -57,4 +57,4 @@ The installer:
 ## Requirements
 
 - **Node.js**: >= 20.x.x
-- **Simpl Framework**: A (preferably clean) installation of Simpl, if not clean, some manual merging may be required, or the installer may skip files or break things!
+- **Simpl Framework**: A (preferably clean) installation of Simpl, if not clean, some manual merging may be required, or the installer may skip files or break things (you have been warned).
