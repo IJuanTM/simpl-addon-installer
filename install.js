@@ -8,7 +8,7 @@ const COLORS = {
   reset: '\x1b[0m', green: '\x1b[32m', yellow: '\x1b[33m', red: '\x1b[31m', cyan: '\x1b[36m', blue: '\x1b[34m', gray: '\x1b[90m', bold: '\x1b[1m', dim: '\x1b[2m'
 };
 
-const BRANCH = 'update/1.5.0';
+const BRANCH = 'master';
 const REPO_BASE = 'https://api.github.com/repos/IJuanTM/simpl/contents/add-ons';
 const RAW_BASE = `https://raw.githubusercontent.com/IJuanTM/simpl/${BRANCH}/add-ons`;
 
