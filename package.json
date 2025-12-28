@@ -6,6 +6,13 @@
   "bin": {
     "simpl-addon": "install.js"
   },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/IJuanTM/simpl"
+  },
   "keywords": [
     "simpl",
     "addon",
@@ -15,12 +22,5 @@
   ],
   "author": "Iwan van der Wal",
   "license": "GPL-3.0-only",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/IJuanTM/simpl"
-  },
-  "homepage": "https://simpl.iwanvanderwal.nl/",
-  "engines": {
-    "node": ">=20.0.0"
-  }
+  "homepage": "https://simpl.iwanvanderwal.nl/"
 }
