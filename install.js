@@ -3,28 +3,22 @@
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
+const {promisify} = require('util');
+const {exec} = require('child_process');
+
+const execAsync = promisify(exec);
 
 const COLORS = {
   reset: '\x1b[0m', green: '\x1b[32m', yellow: '\x1b[33m', red: '\x1b[31m', cyan: '\x1b[36m', blue: '\x1b[34m', gray: '\x1b[90m', bold: '\x1b[1m', dim: '\x1b[2m'
 };
 
-const BRANCH = 'master';
-const REPO_BASE = 'https://api.github.com/repos/IJuanTM/simpl/contents/add-ons';
-const RAW_BASE = `https://raw.githubusercontent.com/IJuanTM/simpl/${BRANCH}/add-ons`;
+const CDN_BASE = 'https://cdn.simpl.iwanvanderwal.nl/framework';
 
 const log = (message, color = 'reset') => console.log(`${COLORS[color]}${message}${COLORS.reset}`);
 
 const fetchUrl = (url) => new Promise((resolve, reject) => {
-  const headers = {'User-Agent': 'simpl-installer'};
-  if (process.env.GITHUB_TOKEN) headers['Authorization'] = `Bearer ${process.env.GITHUB_TOKEN}`;
-
-  https.get(url, {headers}, res => {
+  https.get(url, res => {
     if (res.statusCode === 302 || res.statusCode === 301) return fetchUrl(res.headers.location).then(resolve).catch(reject);
-    if (res.statusCode === 403) {
-      const resetTime = res.headers['x-ratelimit-reset'];
-      const resetDate = resetTime ? new Date(resetTime * 1000).toLocaleTimeString() : 'unknown';
-      return reject(new Error(`GitHub API rate limit exceeded. Resets at ${resetDate}. ${process.env.GITHUB_TOKEN ? 'Token is set but may be invalid.' : 'Set GITHUB_TOKEN environment variable to increase limit.'}`));
-    }
     if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}: ${res.statusMessage || 'Request failed'}`));
 
     let data = '';
@@ -33,51 +27,82 @@ const fetchUrl = (url) => new Promise((resolve, reject) => {
   }).on('error', reject);
 });
 
+const downloadFile = (url, dest) => new Promise((resolve, reject) => {
+  const file = fs.createWriteStream(dest);
+
+  https.get(url, res => {
+    if (res.statusCode === 302 || res.statusCode === 301) {
+      fs.unlinkSync(dest);
+      return downloadFile(res.headers.location, dest).then(resolve).catch(reject);
+    }
+    if (res.statusCode !== 200) {
+      fs.unlinkSync(dest);
+      return reject(new Error(`HTTP ${res.statusCode}: ${res.statusMessage || 'Request failed'}`));
+    }
+
+    res.pipe(file);
+    file.on('finish', () => {
+      file.close();
+      resolve();
+    });
+  }).on('error', err => {
+    fs.unlinkSync(dest);
+    reject(err);
+  });
+
+  file.on('error', err => {
+    fs.unlinkSync(dest);
+    reject(err);
+  });
+});
+
 const showHelp = () => {
   console.log();
   log(`  ╭${'─'.repeat(62)}╮`);
   log(`  │  ${COLORS.bold}Simpl Add-on Installer${COLORS.reset}${' '.repeat(38)}│`);
   log(`  ╰${'─'.repeat(62)}╯`);
   console.log();
-  log('  Usage:', 'cyan');
-  log('    npx @ijuantm/simpl-addon <addon-name>');
-  log('    npx @ijuantm/simpl-addon --list');
-  log('    npx @ijuantm/simpl-addon --help');
+  log(`  ${COLORS.bold}Usage:${COLORS.reset}`, 'blue');
+  log(`    ${COLORS.dim}npx @ijuantm/simpl-addon <addon-name> [version]${COLORS.reset}`);
+  log(`    ${COLORS.dim}npx @ijuantm/simpl-addon --list [version]${COLORS.reset}`);
+  log(`    ${COLORS.dim}npx @ijuantm/simpl-addon --help${COLORS.reset}`);
   console.log();
-  log('  Commands:', 'cyan');
-  log('    <addon-name>    Install the specified add-on');
-  log('    --list, -l      List all available add-ons');
-  log('    --help, -h      Show this help message');
+  log(`  ${COLORS.bold}Arguments:${COLORS.reset}`, 'blue');
+  log(`    ${COLORS.dim}addon-name${COLORS.reset}    Name of the add-on to install`);
+  log(`    ${COLORS.dim}version${COLORS.reset}       Framework version (default: latest)`);
   console.log();
-  log('  Examples:', 'cyan');
-  log('    npx @ijuantm/simpl-addon auth');
-  log('    npx @ijuantm/simpl-addon --list');
+  log(`  ${COLORS.bold}Commands:${COLORS.reset}`, 'blue');
+  log(`    ${COLORS.dim}--list, -l${COLORS.reset}    List all available add-ons`);
+  log(`    ${COLORS.dim}--help, -h${COLORS.reset}    Show this help message`);
+  console.log();
+  log(`  ${COLORS.bold}Examples:${COLORS.reset}`, 'blue');
+  log(`    ${COLORS.dim}npx @ijuantm/simpl-addon auth${COLORS.reset}`);
+  log(`    ${COLORS.dim}npx @ijuantm/simpl-addon auth 1.5.0${COLORS.reset}`);
+  log(`    ${COLORS.dim}npx @ijuantm/simpl-addon --list${COLORS.reset}`);
   console.log();
 };
 
-const listAddons = async () => {
+const listAddons = async (version) => {
   console.log();
   log(`  ╭${'─'.repeat(62)}╮`);
-  log(`  │  ${COLORS.bold}Available Add-ons${COLORS.reset}${' '.repeat(43)}│`);
+  log(`  │  ${COLORS.bold}Available Add-ons${COLORS.reset} ${COLORS.dim}(v${version})${COLORS.reset}${' '.repeat(36 - version.length)}│`);
   log(`  ╰${'─'.repeat(62)}╯`);
   console.log();
-  log('  📦 Fetching add-ons from GitHub...', 'bold');
+  log('  📦 Fetching available add-ons...', 'bold');
 
   try {
-    const response = await fetchUrl(`${REPO_BASE}?ref=${BRANCH}`);
-    const addons = JSON.parse(response).filter(item => item.type === 'dir').map(item => item.name);
+    const response = await fetchUrl(`${CDN_BASE}/${version}/add-ons/list.json`);
+    const addons = JSON.parse(response)['add-ons'];
 
     console.log();
 
-    if (addons.length === 0) {
-      log(`  ${COLORS.yellow}⚠${COLORS.reset} No add-ons available`);
-    } else {
-      addons.forEach(name => log(`  ${COLORS.cyan}•${COLORS.reset} ${name}`));
-    }
+    if (addons.length === 0) log(`  ${COLORS.yellow}⚠${COLORS.reset} No add-ons available`);
+    else addons.forEach(name => log(`  ${COLORS.cyan}•${COLORS.reset} ${COLORS.dim}${name}${COLORS.reset}`));
   } catch (error) {
     console.log();
     log(`  ${COLORS.red}✗${COLORS.reset} Failed to fetch add-ons: ${error.message}`, 'red');
     console.log();
+
     process.exit(1);
   }
 
@@ -91,7 +116,10 @@ const extractMarkers = (content) => {
     const afterMatch = line.match(/@addon-insert:after\s*\(\s*["'](.+?)["']\s*\)/);
     const beforeMatch = line.match(/@addon-insert:before\s*\(\s*["'](.+?)["']\s*\)/);
 
-    if (afterMatch) markers.push({type: 'after', lineIndex: i, searchText: afterMatch[1]}); else if (beforeMatch) markers.push({type: 'before', lineIndex: i, searchText: beforeMatch[1]}); else if (line.includes('@addon-insert:prepend')) markers.push({type: 'prepend', lineIndex: i}); else if (line.includes('@addon-insert:append')) markers.push({type: 'append', lineIndex: i});
+    if (afterMatch) markers.push({type: 'after', lineIndex: i, searchText: afterMatch[1]});
+    else if (beforeMatch) markers.push({type: 'before', lineIndex: i, searchText: beforeMatch[1]});
+    else if (line.includes('@addon-insert:prepend')) markers.push({type: 'prepend', lineIndex: i});
+    else if (line.includes('@addon-insert:append')) markers.push({type: 'append', lineIndex: i});
   });
 
   return markers;
@@ -102,15 +130,14 @@ const collectContentBetweenMarkers = (lines, startIndex) => {
 
   for (let i = startIndex + 1; i < lines.length; i++) {
     if (lines[i].trim().includes('@addon-end')) break;
+
     content.push(lines[i]);
   }
 
   return content;
 };
 
-const normalizeContent = (lines) => lines.map(l => l.trim())
-  .filter(l => l && !l.startsWith('//') && !l.startsWith('#') && !l.startsWith('/*') && !l.startsWith('*'))
-  .join('|');
+const normalizeContent = (lines) => lines.map(l => l.trim()).filter(l => l && !l.startsWith('//') && !l.startsWith('#') && !l.startsWith('/*') && !l.startsWith('*')).join('|');
 
 const processEnvContent = (content, targetContent) => {
   const envVarsToAdd = [], comments = [];
@@ -124,6 +151,7 @@ const processEnvContent = (content, targetContent) => {
     }
 
     const match = line.match(/^([A-Z_][A-Z0-9_]*)=/);
+
     if (match && !new RegExp(`^${match[1]}=`, 'm').test(targetContent)) envVarsToAdd.push(line);
   });
 
@@ -131,10 +159,7 @@ const processEnvContent = (content, targetContent) => {
 };
 
 const findInsertIndex = (lines, searchText, type) => {
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].includes(searchText)) return type === 'before' ? i : i + 1;
-  }
-
+  for (let i = 0; i < lines.length; i++) if (lines[i].includes(searchText)) return type === 'before' ? i : i + 1;
   return -1;
 };
 
@@ -142,16 +167,19 @@ const mergeFile = (targetPath, addonContent, markers, isEnv = false) => {
   const targetContent = fs.readFileSync(targetPath, 'utf8');
   const addonLines = addonContent.split('\n');
   const operations = [];
+
   let newContent = targetContent;
 
   markers.forEach(marker => {
     let content = collectContentBetweenMarkers(addonLines, marker.lineIndex);
+
     if (content.length === 0) return;
 
     let lineCount = content.length;
 
     if (isEnv) {
       const processed = processEnvContent(content, newContent);
+
       content = processed.content;
       lineCount = processed.count;
 
@@ -171,10 +199,13 @@ const mergeFile = (targetPath, addonContent, markers, isEnv = false) => {
 
     if (marker.type === 'prepend') {
       newContent = content.join('\n') + '\n' + newContent;
+
       operations.push({success: true, type: 'prepend', lines: lineCount});
     } else if (marker.type === 'append') {
       if (!newContent.endsWith('\n')) newContent += '\n';
+
       newContent += '\n' + content.join('\n') + '\n';
+
       operations.push({success: true, type: 'append', lines: lineCount});
     } else if ((marker.type === 'after' || marker.type === 'before') && marker.searchText) {
       const targetLines = newContent.split('\n');
@@ -186,72 +217,105 @@ const mergeFile = (targetPath, addonContent, markers, isEnv = false) => {
       }
 
       targetLines.splice(insertIndex, 0, ...content);
+
       newContent = targetLines.join('\n');
+
       operations.push({success: true, type: marker.type, lines: lineCount, searchText: marker.searchText});
     }
   });
 
   if (newContent !== targetContent) fs.writeFileSync(targetPath, newContent, 'utf8');
+
   return {modified: newContent !== targetContent, operations};
 };
 
 const printMergeResults = (relativePath, isEnv, result) => {
   const indent = '    ';
   const varText = isEnv ? 'environment variable' : 'line';
+
   let hasChanges = false;
 
   result.operations.forEach(op => {
     if (op.success) {
       hasChanges = true;
 
-      if (op.type === 'prepend') log(`${indent}${COLORS.green}✓${COLORS.reset} Prepended ${COLORS.bold}${op.lines}${COLORS.reset} ${varText}${op.lines !== 1 ? 's' : ''} to file start`); else if (op.type === 'append') log(`${indent}${COLORS.green}✓${COLORS.reset} Appended ${COLORS.bold}${op.lines}${COLORS.reset} ${varText}${op.lines !== 1 ? 's' : ''} to file end`); else if (op.type === 'after') log(`${indent}${COLORS.green}✓${COLORS.reset} Inserted ${COLORS.bold}${op.lines}${COLORS.reset} ${varText}${op.lines !== 1 ? 's' : ''} ${COLORS.cyan}after${COLORS.reset} "${COLORS.dim}${op.searchText}${COLORS.reset}"`); else if (op.type === 'before') log(`${indent}${COLORS.green}✓${COLORS.reset} Inserted ${COLORS.bold}${op.lines}${COLORS.reset} ${varText}${op.lines !== 1 ? 's' : ''} ${COLORS.cyan}before${COLORS.reset} "${COLORS.dim}${op.searchText}${COLORS.reset}"`);
-    } else if (op.type === 'notfound') log(`${indent}${COLORS.yellow}⚠${COLORS.reset} ${COLORS.yellow}Could not find target:${COLORS.reset} "${COLORS.dim}${op.searchText}${COLORS.reset}"`); else log(`${indent}${COLORS.gray}○${COLORS.reset} ${COLORS.dim}Content already exists (${op.type})${COLORS.reset}`);
+      if (op.type === 'prepend') log(`${indent}${COLORS.green}✓${COLORS.reset} Prepended ${COLORS.bold}${op.lines}${COLORS.reset} ${varText}${op.lines !== 1 ? 's' : ''} to file start`);
+      else if (op.type === 'append') log(`${indent}${COLORS.green}✓${COLORS.reset} Appended ${COLORS.bold}${op.lines}${COLORS.reset} ${varText}${op.lines !== 1 ? 's' : ''} to file end`);
+      else if (op.type === 'after') log(`${indent}${COLORS.green}✓${COLORS.reset} Inserted ${COLORS.bold}${op.lines}${COLORS.reset} ${varText}${op.lines !== 1 ? 's' : ''} ${COLORS.cyan}after${COLORS.reset} "${COLORS.dim}${op.searchText}${COLORS.reset}"`);
+      else if (op.type === 'before') log(`${indent}${COLORS.green}✓${COLORS.reset} Inserted ${COLORS.bold}${op.lines}${COLORS.reset} ${varText}${op.lines !== 1 ? 's' : ''} ${COLORS.cyan}before${COLORS.reset} "${COLORS.dim}${op.searchText}${COLORS.reset}"`);
+    } else if (op.type === 'notfound') log(`${indent}${COLORS.yellow}⚠${COLORS.reset} ${COLORS.yellow}Could not find target:${COLORS.reset} "${COLORS.dim}${op.searchText}${COLORS.reset}"`);
+    else log(`${indent}${COLORS.gray}○${COLORS.reset} ${COLORS.dim}Content already exists (${op.type})${COLORS.reset}`);
   });
 
   return hasChanges;
 };
 
-const downloadAddonFiles = async (addonName, targetDir) => {
-  const addonUrl = `${REPO_BASE}/${addonName}?ref=${BRANCH}`;
-  let files;
+const extractZip = async zipPath => {
+  const tempExtract = path.join(process.cwd(), '__temp_extract_addon__');
 
-  try {
-    files = JSON.parse(await fetchUrl(addonUrl));
-  } catch (error) {
-    throw new Error(`Add-on "${addonName}" not found`);
+  if (process.platform === 'win32') {
+    await execAsync(`powershell -command "Expand-Archive -Path '${zipPath}' -DestinationPath '${tempExtract}' -Force"`);
+  } else {
+    await execAsync(`unzip -q "${zipPath}" -d "${tempExtract}"`);
   }
 
+  const entries = fs.readdirSync(tempExtract, {withFileTypes: true});
+  const sourceDir = entries.length === 1 && entries[0].isDirectory() ? path.join(tempExtract, entries[0].name) : tempExtract;
+
+  return {sourceDir, tempExtract};
+};
+
+const processAddonFiles = (addonDir, targetDir) => {
   const copied = [], skipped = [], toMerge = [];
 
-  const processFiles = async (fileList, basePath = '') => {
-    for (const file of fileList) {
-      if (file.name === 'README.md') continue;
+  const processDirectory = (dir, basePath = '') => fs.readdirSync(dir, {withFileTypes: true}).forEach(entry => {
+    if (entry.name === 'README.md') return;
 
-      const relativePath = path.join(basePath, file.name).replace(/\\/g, '/');
-      const destPath = path.join(targetDir, relativePath);
+    const srcPath = path.join(dir, entry.name);
+    const relativePath = path.join(basePath, entry.name).replace(/\\/g, '/');
+    const destPath = path.join(targetDir, relativePath);
 
-      if (file.type === 'dir') {
-        const subUrl = file.url.includes('?') ? `${file.url}&ref=${BRANCH}` : `${file.url}?ref=${BRANCH}`;
-        const subFiles = JSON.parse(await fetchUrl(subUrl));
-        await processFiles(subFiles, relativePath);
+    if (entry.isDirectory()) processDirectory(srcPath, relativePath);
+    else {
+      const content = fs.readFileSync(srcPath, 'utf8');
+
+      if (fs.existsSync(destPath)) {
+        const markers = extractMarkers(content);
+
+        if (markers.length > 0 || entry.name === '.env') toMerge.push({content, destPath, relativePath, markers});
+        else skipped.push(relativePath);
       } else {
-        const content = await fetchUrl(`${RAW_BASE}/${addonName}/${relativePath}`);
+        fs.mkdirSync(path.dirname(destPath), {recursive: true});
+        fs.copyFileSync(srcPath, destPath);
 
-        if (fs.existsSync(destPath)) {
-          const markers = extractMarkers(content);
-
-          if (markers.length > 0 || file.name === '.env') toMerge.push({content, destPath, relativePath, markers}); else skipped.push(relativePath);
-        } else {
-          fs.mkdirSync(path.dirname(destPath), {recursive: true});
-          fs.writeFileSync(destPath, content, 'utf8');
-          copied.push(relativePath);
-        }
+        copied.push(relativePath);
       }
     }
-  };
+  });
 
-  await processFiles(files);
+  processDirectory(addonDir);
+
   return {copied, skipped, toMerge};
+};
+
+const downloadAddon = async (addonName, version, targetDir) => {
+  const zipUrl = `${CDN_BASE}/${version}/add-ons/${addonName}.zip`;
+  const tempZip = path.join(process.cwd(), `temp-addon-${addonName}.zip`);
+
+  try {
+    await downloadFile(zipUrl, tempZip);
+
+    const {sourceDir, tempExtract} = await extractZip(tempZip);
+    const result = processAddonFiles(sourceDir, targetDir);
+
+    fs.unlinkSync(tempZip);
+    fs.rmSync(tempExtract, {recursive: true, force: true});
+
+    return result;
+  } catch (error) {
+    if (fs.existsSync(tempZip)) fs.unlinkSync(tempZip);
+    throw error;
+  }
 };
 
 const mergeFiles = (toMerge) => {
@@ -261,13 +325,17 @@ const mergeFiles = (toMerge) => {
 
   toMerge.forEach(({content, destPath, relativePath, markers}) => {
     const isEnv = path.basename(destPath) === '.env';
+
     log(`\n  ${COLORS.cyan}•${COLORS.reset} ${COLORS.bold}${relativePath}${COLORS.reset}`);
 
     try {
       const result = mergeFile(destPath, content, markers, isEnv);
-      if (printMergeResults(relativePath, isEnv, result)) merged.push(relativePath); else unchanged.push(relativePath);
+
+      if (printMergeResults(relativePath, isEnv, result)) merged.push(relativePath);
+      else unchanged.push(relativePath);
     } catch (error) {
       log(`    ${COLORS.red}✗ Error:${COLORS.reset} ${error.message}`, 'red');
+
       failed.push(relativePath);
     }
   });
@@ -276,34 +344,42 @@ const mergeFiles = (toMerge) => {
 };
 
 const main = async () => {
-  const command = process.argv[2];
+  const args = process.argv.slice(2);
+  const firstArg = args[0];
 
-  if (!command || command === '--help' || command === '-h') {
+  if (!firstArg || firstArg === '--help' || firstArg === '-h') {
     showHelp();
+
     process.exit(0);
   }
 
-  if (command === '--list' || command === '-l') {
-    await listAddons();
+  if (firstArg === '--list' || firstArg === '-l') {
+    const version = args[1] || 'latest';
+    await listAddons(version);
+
     process.exit(0);
   }
+
+  const addonName = firstArg;
+  const version = args[1] || 'latest';
 
   console.log();
   log(`  ╭${'─'.repeat(62)}╮`);
-  log(`  │  ${COLORS.bold}Installing add-on: ${COLORS.cyan}${command}${COLORS.reset}${' '.repeat(41 - command.length)}│`);
+  log(`  │  ${COLORS.bold}Installing add-on: ${COLORS.cyan}${addonName}${COLORS.reset} ${COLORS.dim}(v${version})${COLORS.reset}${' '.repeat(36 - addonName.length - version.length)}│`);
   log(`  ╰${'─'.repeat(62)}╯`);
   console.log();
-  log('  📦 Downloading add-on from GitHub...', 'bold');
+  log('  📦 Downloading add-on from CDN...', 'bold');
 
   let copied, skipped, toMerge;
 
   try {
-    ({copied, skipped, toMerge} = await downloadAddonFiles(command, process.cwd()));
+    ({copied, skipped, toMerge} = await downloadAddon(addonName, version, process.cwd()));
   } catch (error) {
     console.log();
     log(`  ${COLORS.red}✗${COLORS.reset} ${error.message}`, 'red');
-    log(`  ${COLORS.dim}Run ${COLORS.cyan}npx @ijuantm/simpl-addon --list${COLORS.reset}${COLORS.dim} to see available add-ons${COLORS.reset}`);
+    log(`  ${COLORS.dim}Run ${COLORS.dim}npx @ijuantm/simpl-addon --list${COLORS.reset} to see available add-ons`);
     console.log();
+
     process.exit(1);
   }
 
@@ -315,6 +391,7 @@ const main = async () => {
   if (skipped.length > 0) {
     console.log();
     log(`  ${COLORS.gray}○${COLORS.reset} ${COLORS.dim}Skipped ${skipped.length} file${skipped.length !== 1 ? 's' : ''} (no merge markers):${COLORS.reset}`);
+
     skipped.forEach(file => log(`    ${COLORS.dim}• ${file}${COLORS.reset}`));
   }
 
@@ -334,6 +411,7 @@ const main = async () => {
       console.log();
       log(`  ${COLORS.yellow}⚠${COLORS.reset} ${COLORS.yellow}${failed.length} file${failed.length !== 1 ? 's' : ''} failed to merge${COLORS.reset}`);
       log(`  ${COLORS.yellow}Please review manually:${COLORS.reset}`);
+
       failed.forEach(file => log(`    ${COLORS.cyan}• ${file}${COLORS.reset}`));
     }
   }
@@ -345,5 +423,6 @@ const main = async () => {
 
 main().catch(err => {
   log(`\n  ${COLORS.red}✗${COLORS.reset} Fatal error: ${err.message}\n`, 'red');
+
   process.exit(1);
 });
