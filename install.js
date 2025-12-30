@@ -85,7 +85,7 @@ const showHelp = () => {
 const listAddons = async (version) => {
   console.log();
   log(`  ╭${'─'.repeat(62)}╮`);
-  log(`  │  ${COLORS.bold}Available Add-ons${COLORS.reset} ${COLORS.dim}(v${version})${COLORS.reset}${' '.repeat(36 - version.length)}│`);
+  log(`  │  ${COLORS.bold}Available Add-ons${COLORS.reset} ${COLORS.dim}(${version})${COLORS.reset}${' '.repeat(39 - version.length)}│`);
   log(`  ╰${'─'.repeat(62)}╯`);
   console.log();
   log('  📦 Fetching available add-ons...', 'bold');
@@ -97,7 +97,7 @@ const listAddons = async (version) => {
     console.log();
 
     if (addons.length === 0) log(`  ${COLORS.yellow}⚠${COLORS.reset} No add-ons available`);
-    else addons.forEach(name => log(`  ${COLORS.cyan}•${COLORS.reset} ${COLORS.dim}${name}${COLORS.reset}`));
+    else addons.forEach(name => log(`  ${COLORS.cyan}•${COLORS.reset} ${name}`));
   } catch (error) {
     console.log();
     log(`  ${COLORS.red}✗${COLORS.reset} Failed to fetch add-ons: ${error.message}`, 'red');
@@ -326,7 +326,7 @@ const mergeFiles = (toMerge) => {
   toMerge.forEach(({content, destPath, relativePath, markers}) => {
     const isEnv = path.basename(destPath) === '.env';
 
-    log(`\n  ${COLORS.cyan}•${COLORS.reset} ${COLORS.bold}${relativePath}${COLORS.reset}`);
+    log(`\n  ${COLORS.cyan}•${COLORS.reset} ${COLORS.dim}${relativePath}${COLORS.reset}`);
 
     try {
       const result = mergeFile(destPath, content, markers, isEnv);
@@ -365,10 +365,10 @@ const main = async () => {
 
   console.log();
   log(`  ╭${'─'.repeat(62)}╮`);
-  log(`  │  ${COLORS.bold}Installing add-on: ${COLORS.cyan}${addonName}${COLORS.reset} ${COLORS.dim}(v${version})${COLORS.reset}${' '.repeat(36 - addonName.length - version.length)}│`);
+  log(`  │  ${COLORS.bold}Installing Add-on: ${COLORS.cyan}${addonName}${COLORS.reset} ${COLORS.dim}(${version})${COLORS.reset}${' '.repeat(37 - addonName.length - version.length)}│`);
   log(`  ╰${'─'.repeat(62)}╯`);
   console.log();
-  log('  📦 Downloading add-on from CDN...', 'bold');
+  log('  📦 Downloading add-on...', 'bold');
 
   let copied, skipped, toMerge;
 
