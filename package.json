@@ -1,6 +1,6 @@
 {
   "name": "@ijuantm/simpl-addon",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "description": "CLI tool to install Simpl framework add-ons.",
   "main": "install.js",
   "bin": {

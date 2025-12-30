@@ -56,6 +56,19 @@ const downloadFile = (url, dest) => new Promise((resolve, reject) => {
   });
 });
 
+const getSimplVersion = () => {
+  const simplFile = path.join(process.cwd(), '.simpl');
+
+  if (!fs.existsSync(simplFile)) throw new Error('Not a Simpl project. Missing .simpl file in current directory.');
+
+  const content = fs.readFileSync(simplFile, 'utf8');
+  const config = JSON.parse(content);
+
+  if (!config.version) throw new Error('Invalid .simpl file: missing version field');
+
+  return config.version;
+};
+
 const showHelp = () => {
   console.log();
   log(`  ╭${'─'.repeat(62)}╮`);
@@ -63,13 +76,12 @@ const showHelp = () => {
   log(`  ╰${'─'.repeat(62)}╯`);
   console.log();
   log(`  ${COLORS.bold}Usage:${COLORS.reset}`, 'blue');
-  log(`    ${COLORS.dim}npx @ijuantm/simpl-addon <addon-name> [version]${COLORS.reset}`);
-  log(`    ${COLORS.dim}npx @ijuantm/simpl-addon --list [version]${COLORS.reset}`);
+  log(`    ${COLORS.dim}npx @ijuantm/simpl-addon <addon-name>${COLORS.reset}`);
+  log(`    ${COLORS.dim}npx @ijuantm/simpl-addon --list${COLORS.reset}`);
   log(`    ${COLORS.dim}npx @ijuantm/simpl-addon --help${COLORS.reset}`);
   console.log();
   log(`  ${COLORS.bold}Arguments:${COLORS.reset}`, 'blue');
   log(`    ${COLORS.dim}addon-name${COLORS.reset}    Name of the add-on to install`);
-  log(`    ${COLORS.dim}version${COLORS.reset}       Framework version (default: latest)`);
   console.log();
   log(`  ${COLORS.bold}Commands:${COLORS.reset}`, 'blue');
   log(`    ${COLORS.dim}--list, -l${COLORS.reset}    List all available add-ons`);
@@ -77,8 +89,11 @@ const showHelp = () => {
   console.log();
   log(`  ${COLORS.bold}Examples:${COLORS.reset}`, 'blue');
   log(`    ${COLORS.dim}npx @ijuantm/simpl-addon auth${COLORS.reset}`);
-  log(`    ${COLORS.dim}npx @ijuantm/simpl-addon auth 1.5.0${COLORS.reset}`);
   log(`    ${COLORS.dim}npx @ijuantm/simpl-addon --list${COLORS.reset}`);
+  console.log();
+  log(`  ${COLORS.bold}Note:${COLORS.reset}`, 'blue');
+  log(`    Run this command from the root of your Simpl project.`);
+  log(`    The add-on version will match your Simpl framework version.`);
   console.log();
 };
 
@@ -92,7 +107,7 @@ const listAddons = async (version) => {
 
   try {
     const response = await fetchUrl(`${CDN_BASE}/${version}/add-ons/list.json`);
-    const addons = JSON.parse(response)['add-ons'];
+    const addons = JSON.parse(String(response))['add-ons'];
 
     console.log();
 
@@ -353,15 +368,25 @@ const main = async () => {
     process.exit(0);
   }
 
+  let version;
+
+  try {
+    version = getSimplVersion();
+  } catch (error) {
+    console.log();
+    log(`  ${COLORS.red}✗${COLORS.reset} ${error.message}`, 'red');
+    console.log();
+
+    process.exit(1);
+  }
+
   if (firstArg === '--list' || firstArg === '-l') {
-    const version = args[1] || 'latest';
     await listAddons(version);
 
     process.exit(0);
   }
 
   const addonName = firstArg;
-  const version = args[1] || 'latest';
 
   console.log();
   log(`  ╭${'─'.repeat(62)}╮`);
