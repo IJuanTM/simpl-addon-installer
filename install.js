@@ -85,7 +85,7 @@ const showHelp = () => {
 const listAddons = async (version) => {
   console.log();
   log(`  ╭${'─'.repeat(62)}╮`);
-  log(`  │  ${COLORS.bold}Available Add-ons${COLORS.reset} ${COLORS.dim}(${version})${COLORS.reset}${' '.repeat(39 - version.length)}│`);
+  log(`  │  ${COLORS.bold}Available Add-ons${COLORS.reset} ${COLORS.dim}(${version})${COLORS.reset}${' '.repeat(40 - version.length)}│`);
   log(`  ╰${'─'.repeat(62)}╯`);
   console.log();
   log('  📦 Fetching available add-ons...', 'bold');
@@ -365,7 +365,7 @@ const main = async () => {
 
   console.log();
   log(`  ╭${'─'.repeat(62)}╮`);
-  log(`  │  ${COLORS.bold}Installing Add-on: ${COLORS.cyan}${addonName}${COLORS.reset} ${COLORS.dim}(${version})${COLORS.reset}${' '.repeat(37 - addonName.length - version.length)}│`);
+  log(`  │  ${COLORS.bold}Installing Add-on: ${COLORS.cyan}${addonName}${COLORS.reset} ${COLORS.dim}(${version})${COLORS.reset}${' '.repeat(38 - addonName.length - version.length)}│`);
   log(`  ╰${'─'.repeat(62)}╯`);
   console.log();
   log('  📦 Downloading add-on...', 'bold');
