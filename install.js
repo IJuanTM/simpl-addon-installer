@@ -76,9 +76,9 @@ const showHelp = () => {
   log(`  ╰${'─'.repeat(62)}╯`);
   console.log();
   log(`  ${COLORS.bold}Usage:${COLORS.reset}`, 'blue');
-  log(`    ${COLORS.dim}npx @simpl/addon <addon-name>${COLORS.reset}`);
-  log(`    ${COLORS.dim}npx @simpl/addon --list${COLORS.reset}`);
-  log(`    ${COLORS.dim}npx @simpl/addon --help${COLORS.reset}`);
+  log(`    ${COLORS.dim}npx @ijuantm/simpl-addon <addon-name>${COLORS.reset}`);
+  log(`    ${COLORS.dim}npx @ijuantm/simpl-addon --list${COLORS.reset}`);
+  log(`    ${COLORS.dim}npx @ijuantm/simpl-addon --help${COLORS.reset}`);
   console.log();
   log(`  ${COLORS.bold}Arguments:${COLORS.reset}`, 'blue');
   log(`    ${COLORS.dim}addon-name${COLORS.reset}    Name of the add-on to install`);
@@ -88,8 +88,8 @@ const showHelp = () => {
   log(`    ${COLORS.dim}--help, -h${COLORS.reset}    Show this help message`);
   console.log();
   log(`  ${COLORS.bold}Examples:${COLORS.reset}`, 'blue');
-  log(`    ${COLORS.dim}npx @simpl/addon auth${COLORS.reset}`);
-  log(`    ${COLORS.dim}npx @simpl/addon --list${COLORS.reset}`);
+  log(`    ${COLORS.dim}npx @ijuantm/simpl-addon auth${COLORS.reset}`);
+  log(`    ${COLORS.dim}npx @ijuantm/simpl-addon --list${COLORS.reset}`);
   console.log();
   log(`  ${COLORS.bold}Note:${COLORS.reset}`, 'blue');
   log(`    Run this command from the root of your Simpl project.`);
@@ -402,7 +402,7 @@ const main = async () => {
   } catch (error) {
     console.log();
     log(`  ${COLORS.red}✗${COLORS.reset} ${error.message}`, 'red');
-    log(`  ${COLORS.dim}Run ${COLORS.dim}npx @simpl/addon --list${COLORS.reset} to see available add-ons`);
+    log(`  ${COLORS.dim}Run ${COLORS.dim}npx @ijuantm/simpl-addon --list${COLORS.reset} to see available add-ons`);
     console.log();
 
     process.exit(1);
