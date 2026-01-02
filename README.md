@@ -7,15 +7,15 @@ CLI tool for installing Simpl framework add-ons automatically using npx.
 ### List Available Add-ons
 
 ```bash
-npx @ijuantm/simpl-addon --list
+npx @simpl/addon --list
 ```
 
 ### Install an Add-on
 
-Navigate to your Simpl project directory and run, for example, to install the "auth" add-on:
+Navigate to your Simpl project directory and run the following command. For example, to install the "auth" add-on:
 
 ```bash
-npx @ijuantm/simpl-addon auth
+npx @simpl/addon auth
 ```
 
 The installer will:
@@ -27,7 +27,7 @@ The installer will:
 ### Get Help
 
 ```bash
-npx @ijuantm/simpl-addon --help
+npx @simpl/addon --help
 ```
 
 ## How It Works
