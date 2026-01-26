@@ -13,6 +13,7 @@ const COLORS = {
 };
 
 const CDN_BASE = 'https://cdn.simpl.iwanvanderwal.nl/framework';
+const LOCAL_RELEASES_DIR = process.env.SIMPL_LOCAL_RELEASES || path.join(process.cwd(), 'local-releases');
 
 const log = (message, color = 'reset') => console.log(`${COLORS[color]}${message}${COLORS.reset}`);
 
@@ -61,8 +62,7 @@ const getSimplVersion = () => {
 
   if (!fs.existsSync(simplFile)) throw new Error('Not a Simpl project. Missing .simpl file in current directory.');
 
-  const content = fs.readFileSync(simplFile, 'utf8');
-  const config = JSON.parse(content);
+  const config = JSON.parse(fs.readFileSync(simplFile, 'utf8'));
 
   if (!config.version) throw new Error('Invalid .simpl file: missing version field');
 
@@ -97,6 +97,18 @@ const showHelp = () => {
   console.log();
 };
 
+const checkServerAvailability = () => new Promise(resolve => {
+  const req = https.get(`${CDN_BASE}/versions.json`, {timeout: 5000}, res => {
+    res.resume();
+    resolve(res.statusCode === 200);
+  });
+  req.on('error', () => resolve(false));
+  req.on('timeout', () => {
+    req.destroy();
+    resolve(false);
+  });
+});
+
 const listAddons = async (version) => {
   console.log();
   log(`  ╭${'─'.repeat(62)}╮`);
@@ -106,8 +118,17 @@ const listAddons = async (version) => {
   log('  📦 Fetching available add-ons...', 'bold');
 
   try {
-    const response = await fetchUrl(`${CDN_BASE}/${version}/add-ons/list.json`);
-    const addons = JSON.parse(String(response))['add-ons'];
+    const localListPath = path.join(LOCAL_RELEASES_DIR, version, 'add-ons', 'list.json');
+    let addons;
+
+    if (fs.existsSync(localListPath)) {
+      console.log();
+      log(`  💻 Using local add-ons list`, 'bold');
+      addons = JSON.parse(fs.readFileSync(localListPath, 'utf8'))['add-ons'];
+    } else {
+      if (!await checkServerAvailability()) throw new Error('CDN server is currently unreachable');
+      addons = JSON.parse(await fetchUrl(`${CDN_BASE}/${version}/add-ons/list.json`))['add-ons'];
+    }
 
     console.log();
 
@@ -115,9 +136,8 @@ const listAddons = async (version) => {
     else addons.forEach(name => log(`  ${COLORS.cyan}•${COLORS.reset} ${name}`));
   } catch (error) {
     console.log();
-    log(`  ${COLORS.red}✗${COLORS.reset} Failed to fetch add-ons: ${error.message}`, 'red');
+    log(`  ${COLORS.red}✗${COLORS.reset} Failed to fetch add-ons`, 'red');
     console.log();
-
     process.exit(1);
   }
 
@@ -142,13 +162,10 @@ const extractMarkers = (content) => {
 
 const collectContentBetweenMarkers = (lines, startIndex) => {
   const content = [];
-
   for (let i = startIndex + 1; i < lines.length; i++) {
     if (lines[i].trim().includes('@addon-end')) break;
-
     content.push(lines[i]);
   }
-
   return content;
 };
 
@@ -166,7 +183,6 @@ const processEnvContent = (content, targetContent) => {
     }
 
     const match = line.match(/^([A-Z_][A-Z0-9_]*)=/);
-
     if (match && !new RegExp(`^${match[1]}=`, 'm').test(targetContent)) envVarsToAdd.push(line);
   });
 
@@ -182,19 +198,16 @@ const mergeFile = (targetPath, addonContent, markers, isEnv = false) => {
   const targetContent = fs.readFileSync(targetPath, 'utf8');
   const addonLines = addonContent.split('\n');
   const operations = [];
-
   let newContent = targetContent;
 
   markers.forEach(marker => {
     let content = collectContentBetweenMarkers(addonLines, marker.lineIndex);
-
     if (content.length === 0) return;
 
     let lineCount = content.length;
 
     if (isEnv) {
       const processed = processEnvContent(content, newContent);
-
       content = processed.content;
       lineCount = processed.count;
 
@@ -214,13 +227,10 @@ const mergeFile = (targetPath, addonContent, markers, isEnv = false) => {
 
     if (marker.type === 'prepend') {
       newContent = content.join('\n') + '\n' + newContent;
-
       operations.push({success: true, type: 'prepend', lines: lineCount});
     } else if (marker.type === 'append') {
       if (!newContent.endsWith('\n')) newContent += '\n';
-
       newContent += '\n' + content.join('\n') + '\n';
-
       operations.push({success: true, type: 'append', lines: lineCount});
     } else if ((marker.type === 'after' || marker.type === 'before') && marker.searchText) {
       const targetLines = newContent.split('\n');
@@ -232,9 +242,7 @@ const mergeFile = (targetPath, addonContent, markers, isEnv = false) => {
       }
 
       targetLines.splice(insertIndex, 0, ...content);
-
       newContent = targetLines.join('\n');
-
       operations.push({success: true, type: marker.type, lines: lineCount, searchText: marker.searchText});
     }
   });
@@ -247,13 +255,11 @@ const mergeFile = (targetPath, addonContent, markers, isEnv = false) => {
 const printMergeResults = (relativePath, isEnv, result) => {
   const indent = '    ';
   const varText = isEnv ? 'environment variable' : 'line';
-
   let hasChanges = false;
 
   result.operations.forEach(op => {
     if (op.success) {
       hasChanges = true;
-
       if (op.type === 'prepend') log(`${indent}${COLORS.green}✓${COLORS.reset} Prepended ${COLORS.bold}${op.lines}${COLORS.reset} ${varText}${op.lines !== 1 ? 's' : ''} to file start`);
       else if (op.type === 'append') log(`${indent}${COLORS.green}✓${COLORS.reset} Appended ${COLORS.bold}${op.lines}${COLORS.reset} ${varText}${op.lines !== 1 ? 's' : ''} to file end`);
       else if (op.type === 'after') log(`${indent}${COLORS.green}✓${COLORS.reset} Inserted ${COLORS.bold}${op.lines}${COLORS.reset} ${varText}${op.lines !== 1 ? 's' : ''} ${COLORS.cyan}after${COLORS.reset} "${COLORS.dim}${op.searchText}${COLORS.reset}"`);
@@ -265,19 +271,21 @@ const printMergeResults = (relativePath, isEnv, result) => {
   return hasChanges;
 };
 
-const extractZip = async zipPath => {
-  const tempExtract = path.join(process.cwd(), '__temp_extract_addon__');
+const extractZip = async (zipPath, destDir) => {
+  fs.mkdirSync(destDir, {recursive: true});
 
-  if (process.platform === 'win32') {
-    await execAsync(`powershell -command "Expand-Archive -Path '${zipPath}' -DestinationPath '${tempExtract}' -Force"`);
-  } else {
-    await execAsync(`unzip -q "${zipPath}" -d "${tempExtract}"`);
+  if (process.platform === 'win32') await execAsync(`powershell -command "Expand-Archive -Path '${zipPath}' -DestinationPath '${destDir}' -Force"`);
+  else await execAsync(`unzip -q "${zipPath}" -d "${destDir}"`);
+
+  const entries = fs.readdirSync(destDir, {withFileTypes: true});
+
+  if (entries.length === 1 && entries[0].isDirectory()) {
+    const nestedDir = path.join(destDir, entries[0].name);
+    fs.readdirSync(nestedDir).forEach(item => fs.renameSync(path.join(nestedDir, item), path.join(destDir, item)));
+    fs.rmdirSync(nestedDir);
   }
 
-  const entries = fs.readdirSync(tempExtract, {withFileTypes: true});
-  const sourceDir = entries.length === 1 && entries[0].isDirectory() ? path.join(tempExtract, entries[0].name) : tempExtract;
-
-  return {sourceDir, tempExtract};
+  return destDir;
 };
 
 const processAddonFiles = (addonDir, targetDir) => {
@@ -290,19 +298,18 @@ const processAddonFiles = (addonDir, targetDir) => {
     const relativePath = path.join(basePath, entry.name).replace(/\\/g, '/');
     const destPath = path.join(targetDir, relativePath);
 
-    if (entry.isDirectory()) processDirectory(srcPath, relativePath);
-    else {
+    if (entry.isDirectory()) {
+      processDirectory(srcPath, relativePath);
+    } else {
       const content = fs.readFileSync(srcPath, 'utf8');
 
       if (fs.existsSync(destPath)) {
         const markers = extractMarkers(content);
-
         if (markers.length > 0 || entry.name === '.env') toMerge.push({content, destPath, relativePath, markers});
         else skipped.push(relativePath);
       } else {
         fs.mkdirSync(path.dirname(destPath), {recursive: true});
         fs.copyFileSync(srcPath, destPath);
-
         copied.push(relativePath);
       }
     }
@@ -314,21 +321,30 @@ const processAddonFiles = (addonDir, targetDir) => {
 };
 
 const downloadAddon = async (addonName, version, targetDir) => {
-  const zipUrl = `${CDN_BASE}/${version}/add-ons/${addonName}.zip`;
-  const tempZip = path.join(process.cwd(), `temp-addon-${addonName}.zip`);
+  const localZipPath = path.join(LOCAL_RELEASES_DIR, version, 'add-ons', `${addonName}.zip`);
+  const tempExtract = path.join(process.cwd(), '__temp_extract_addon__');
 
   try {
-    await downloadFile(zipUrl, tempZip);
+    if (fs.existsSync(localZipPath)) {
+      console.log();
+      log(`  💻 Using local add-on files`, 'bold');
+      const sourceDir = await extractZip(localZipPath, tempExtract);
+      const result = processAddonFiles(sourceDir, targetDir);
+      fs.rmSync(tempExtract, {recursive: true, force: true});
+      return result;
+    }
 
-    const {sourceDir, tempExtract} = await extractZip(tempZip);
+    if (!await checkServerAvailability()) throw new Error('CDN server is currently unreachable');
+
+    const tempZip = path.join(process.cwd(), `temp-addon-${addonName}.zip`);
+    await downloadFile(`${CDN_BASE}/${version}/add-ons/${addonName}.zip`, tempZip);
+    const sourceDir = await extractZip(tempZip, tempExtract);
     const result = processAddonFiles(sourceDir, targetDir);
-
     fs.unlinkSync(tempZip);
     fs.rmSync(tempExtract, {recursive: true, force: true});
-
     return result;
   } catch (error) {
-    if (fs.existsSync(tempZip)) fs.unlinkSync(tempZip);
+    if (fs.existsSync(tempExtract)) fs.rmSync(tempExtract, {recursive: true, force: true});
     throw error;
   }
 };
@@ -340,17 +356,14 @@ const mergeFiles = (toMerge) => {
 
   toMerge.forEach(({content, destPath, relativePath, markers}) => {
     const isEnv = path.basename(destPath) === '.env';
-
     log(`\n  ${COLORS.cyan}•${COLORS.reset} ${COLORS.dim}${relativePath}${COLORS.reset}`);
 
     try {
       const result = mergeFile(destPath, content, markers, isEnv);
-
       if (printMergeResults(relativePath, isEnv, result)) merged.push(relativePath);
       else unchanged.push(relativePath);
     } catch (error) {
       log(`    ${COLORS.red}✗ Error:${COLORS.reset} ${error.message}`, 'red');
-
       failed.push(relativePath);
     }
   });
@@ -364,7 +377,6 @@ const main = async () => {
 
   if (!firstArg || firstArg === '--help' || firstArg === '-h') {
     showHelp();
-
     process.exit(0);
   }
 
@@ -376,13 +388,11 @@ const main = async () => {
     console.log();
     log(`  ${COLORS.red}✗${COLORS.reset} ${error.message}`, 'red');
     console.log();
-
     process.exit(1);
   }
 
   if (firstArg === '--list' || firstArg === '-l') {
     await listAddons(version);
-
     process.exit(0);
   }
 
@@ -401,10 +411,10 @@ const main = async () => {
     ({copied, skipped, toMerge} = await downloadAddon(addonName, version, process.cwd()));
   } catch (error) {
     console.log();
-    log(`  ${COLORS.red}✗${COLORS.reset} ${error.message}`, 'red');
-    log(`  ${COLORS.dim}Run ${COLORS.dim}npx @ijuantm/simpl-addon --list${COLORS.reset} to see available add-ons`);
+    log(`  ${COLORS.red}✗${COLORS.reset} Installation failed`, 'red');
+    if (error.message === 'CDN server is currently unreachable') log(`  ${COLORS.dim}The CDN server is currently unavailable. Please try again later.${COLORS.reset}`);
+    else log(`  ${COLORS.dim}Run ${COLORS.dim}npx @ijuantm/simpl-addon --list${COLORS.reset} to see available add-ons`);
     console.log();
-
     process.exit(1);
   }
 
@@ -416,7 +426,6 @@ const main = async () => {
   if (skipped.length > 0) {
     console.log();
     log(`  ${COLORS.gray}○${COLORS.reset} ${COLORS.dim}Skipped ${skipped.length} file${skipped.length !== 1 ? 's' : ''} (no merge markers):${COLORS.reset}`);
-
     skipped.forEach(file => log(`    ${COLORS.dim}• ${file}${COLORS.reset}`));
   }
 
@@ -436,7 +445,6 @@ const main = async () => {
       console.log();
       log(`  ${COLORS.yellow}⚠${COLORS.reset} ${COLORS.yellow}${failed.length} file${failed.length !== 1 ? 's' : ''} failed to merge${COLORS.reset}`);
       log(`  ${COLORS.yellow}Please review manually:${COLORS.reset}`);
-
       failed.forEach(file => log(`    ${COLORS.cyan}• ${file}${COLORS.reset}`));
     }
   }
@@ -446,8 +454,7 @@ const main = async () => {
   console.log();
 };
 
-main().catch(err => {
-  log(`\n  ${COLORS.red}✗${COLORS.reset} Fatal error: ${err.message}\n`, 'red');
-
+main().catch(() => {
+  log(`\n  ${COLORS.red}✗${COLORS.reset} Fatal error occurred\n`, 'red');
   process.exit(1);
 });

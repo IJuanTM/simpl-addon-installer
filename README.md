@@ -56,5 +56,5 @@ The installer:
 
 ## Requirements
 
-- **Node.js**: >= 20.x.x
+- **Node.js**: >= 22.x.x
 - **Simpl Framework**: A (preferably clean) installation of Simpl, if not clean, some manual merging may be required, or the installer may skip files or break things (you have been warned).

@@ -1,7 +1,7 @@
 {
   "name": "@ijuantm/simpl-addon",
   "description": "CLI tool to install Simpl framework add-ons.",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "scripts": {
     "link": "npm link",
     "unlink": "npm unlink -g @ijuantm/simpl-addon"
@@ -11,7 +11,7 @@
     "simpl-addon": "install.js"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22"
   },
   "repository": {
     "type": "git",
