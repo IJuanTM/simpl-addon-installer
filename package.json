@@ -1,7 +1,7 @@
 {
   "name": "@ijuantm/simpl-addon",
   "description": "CLI tool to install Simpl framework add-ons.",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "scripts": {
     "link": "npm link",
     "unlink": "npm unlink -g @ijuantm/simpl-addon"
@@ -15,7 +15,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/IJuanTM/simpl"
+    "url": "https://github.com/IJuanTM/simpl/"
   },
   "keywords": [
     "simpl",
@@ -26,5 +26,5 @@
   ],
   "author": "Iwan van der Wal",
   "license": "GPL-3.0-only",
-  "homepage": "https://simpl.iwanvanderwal.nl"
+  "homepage": "https://simpl.iwanvanderwal.nl/"
 }

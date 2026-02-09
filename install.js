@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
+const readline = require('readline');
 const {promisify} = require('util');
 const {exec} = require('child_process');
 
@@ -57,6 +58,16 @@ const downloadFile = (url, dest) => new Promise((resolve, reject) => {
   });
 });
 
+const promptUser = (question, defaultValue = '') => new Promise(resolve => {
+  const rl = readline.createInterface({input: process.stdin, output: process.stdout});
+  const prompt = defaultValue ? `${question} ${COLORS.dim}(${defaultValue})${COLORS.reset}: ` : `${question}: `;
+
+  rl.question(prompt, answer => {
+    rl.close();
+    resolve(answer.trim() || defaultValue);
+  });
+});
+
 const getSimplVersion = () => {
   const simplFile = path.join(process.cwd(), '.simpl');
 
@@ -76,20 +87,14 @@ const showHelp = () => {
   log(`  ╰${'─'.repeat(62)}╯`);
   console.log();
   log(`  ${COLORS.bold}Usage:${COLORS.reset}`, 'blue');
-  log(`    ${COLORS.dim}npx @ijuantm/simpl-addon <addon-name>${COLORS.reset}`);
-  log(`    ${COLORS.dim}npx @ijuantm/simpl-addon --list${COLORS.reset}`);
+  log(`    ${COLORS.dim}npx @ijuantm/simpl-addon${COLORS.reset}`);
   log(`    ${COLORS.dim}npx @ijuantm/simpl-addon --help${COLORS.reset}`);
   console.log();
-  log(`  ${COLORS.bold}Arguments:${COLORS.reset}`, 'blue');
-  log(`    ${COLORS.dim}addon-name${COLORS.reset}    Name of the add-on to install`);
-  console.log();
   log(`  ${COLORS.bold}Commands:${COLORS.reset}`, 'blue');
-  log(`    ${COLORS.dim}--list, -l${COLORS.reset}    List all available add-ons`);
   log(`    ${COLORS.dim}--help, -h${COLORS.reset}    Show this help message`);
   console.log();
   log(`  ${COLORS.bold}Examples:${COLORS.reset}`, 'blue');
-  log(`    ${COLORS.dim}npx @ijuantm/simpl-addon auth${COLORS.reset}`);
-  log(`    ${COLORS.dim}npx @ijuantm/simpl-addon --list${COLORS.reset}`);
+  log(`    ${COLORS.dim}npx @ijuantm/simpl-addon${COLORS.reset}`);
   console.log();
   log(`  ${COLORS.bold}Note:${COLORS.reset}`, 'blue');
   log(`    Run this command from the root of your Simpl project.`);
@@ -109,39 +114,14 @@ const checkServerAvailability = () => new Promise(resolve => {
   });
 });
 
-const listAddons = async (version) => {
-  console.log();
-  log(`  ╭${'─'.repeat(62)}╮`);
-  log(`  │  ${COLORS.bold}Available Add-ons${COLORS.reset} ${COLORS.dim}(${version})${COLORS.reset}${' '.repeat(40 - version.length)}│`);
-  log(`  ╰${'─'.repeat(62)}╯`);
-  console.log();
-  log('  📦 Fetching available add-ons...', 'bold');
+const getAvailableAddons = async (version) => {
+  const localListPath = path.join(LOCAL_RELEASES_DIR, version, 'add-ons', 'list.json');
 
-  try {
-    const localListPath = path.join(LOCAL_RELEASES_DIR, version, 'add-ons', 'list.json');
-    let addons;
+  if (fs.existsSync(localListPath)) return JSON.parse(fs.readFileSync(localListPath, 'utf8'))['add-ons'];
 
-    if (fs.existsSync(localListPath)) {
-      console.log();
-      log(`  💻 Using local add-ons list`, 'bold');
-      addons = JSON.parse(fs.readFileSync(localListPath, 'utf8'))['add-ons'];
-    } else {
-      if (!await checkServerAvailability()) throw new Error('CDN server is currently unreachable');
-      addons = JSON.parse(await fetchUrl(`${CDN_BASE}/${version}/add-ons/list.json`))['add-ons'];
-    }
+  if (!await checkServerAvailability()) throw new Error('CDN server is currently unreachable');
 
-    console.log();
-
-    if (addons.length === 0) log(`  ${COLORS.yellow}⚠${COLORS.reset} No add-ons available`);
-    else addons.forEach(name => log(`  ${COLORS.cyan}•${COLORS.reset} ${name}`));
-  } catch (error) {
-    console.log();
-    log(`  ${COLORS.red}✗${COLORS.reset} Failed to fetch add-ons`, 'red');
-    console.log();
-    process.exit(1);
-  }
-
-  console.log();
+  return JSON.parse(await fetchUrl(`${CDN_BASE}/${version}/add-ons/list.json`))['add-ons'];
 };
 
 const extractMarkers = (content) => {
@@ -375,7 +355,7 @@ const main = async () => {
   const args = process.argv.slice(2);
   const firstArg = args[0];
 
-  if (!firstArg || firstArg === '--help' || firstArg === '-h') {
+  if (firstArg === '--help' || firstArg === '-h') {
     showHelp();
     process.exit(0);
   }
@@ -391,16 +371,57 @@ const main = async () => {
     process.exit(1);
   }
 
-  if (firstArg === '--list' || firstArg === '-l') {
-    await listAddons(version);
+  console.log();
+  log(`  ╭${'─'.repeat(62)}╮`);
+  log(`  │  ${COLORS.bold}Simpl Add-on Installer${COLORS.reset} ${COLORS.dim}(${version})${COLORS.reset}${' '.repeat(37 - version.length)}│`);
+  log(`  ╰${'─'.repeat(62)}╯`);
+  console.log();
+  log('  📦 Fetching available add-ons...', 'bold');
+
+  let addons;
+
+  try {
+    addons = await getAvailableAddons(version);
+  } catch (error) {
+    console.log();
+    log(`  ${COLORS.red}✗${COLORS.reset} Failed to fetch add-ons`, 'red');
+    if (error.message === 'CDN server is currently unreachable') log(`  ${COLORS.dim}The CDN server is currently unavailable. Please try again later.${COLORS.reset}`);
+    console.log();
+    process.exit(1);
+  }
+
+  console.log();
+
+  if (addons.length === 0) {
+    log(`  ${COLORS.yellow}⚠${COLORS.reset} No add-ons available for this version`);
+    console.log();
     process.exit(0);
   }
 
-  const addonName = firstArg;
+  log(`  ${COLORS.bold}Available add-ons:${COLORS.reset}`, 'blue');
+  addons.forEach(name => log(`    ${COLORS.cyan}•${COLORS.reset} ${name}`));
+  console.log();
+
+  let addonName;
+
+  while (true) {
+    addonName = await promptUser('  Add-on to install');
+    if (!addonName) {
+      log(`  ${COLORS.red}✗${COLORS.reset} Add-on name cannot be empty`, 'red');
+      console.log();
+      continue;
+    }
+    if (!addons.includes(addonName)) {
+      log(`  ${COLORS.red}✗${COLORS.reset} Add-on "${addonName}" not found`, 'red');
+      console.log();
+      continue;
+    }
+    break;
+  }
 
   console.log();
   log(`  ╭${'─'.repeat(62)}╮`);
-  log(`  │  ${COLORS.bold}Installing Add-on: ${COLORS.cyan}${addonName}${COLORS.reset} ${COLORS.dim}(${version})${COLORS.reset}${' '.repeat(38 - addonName.length - version.length)}│`);
+  log(`  │  ${COLORS.bold}Installing: ${COLORS.cyan}${addonName}${COLORS.reset} ${COLORS.dim}(${version})${COLORS.reset}${' '.repeat(46 - addonName.length - version.length)}│`);
   log(`  ╰${'─'.repeat(62)}╯`);
   console.log();
   log('  📦 Downloading add-on...', 'bold');
@@ -413,7 +434,7 @@ const main = async () => {
     console.log();
     log(`  ${COLORS.red}✗${COLORS.reset} Installation failed`, 'red');
     if (error.message === 'CDN server is currently unreachable') log(`  ${COLORS.dim}The CDN server is currently unavailable. Please try again later.${COLORS.reset}`);
-    else log(`  ${COLORS.dim}Run ${COLORS.dim}npx @ijuantm/simpl-addon --list${COLORS.reset} to see available add-ons`);
+    else log(`  ${COLORS.dim}Please verify the add-on exists and try again${COLORS.reset}`);
     console.log();
     process.exit(1);
   }
