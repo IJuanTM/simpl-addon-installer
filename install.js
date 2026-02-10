@@ -114,14 +114,21 @@ const checkServerAvailability = () => new Promise(resolve => {
   });
 });
 
-const getAvailableAddons = async (version) => {
-  const localListPath = path.join(LOCAL_RELEASES_DIR, version, 'add-ons', 'list.json');
-
-  if (fs.existsSync(localListPath)) return JSON.parse(fs.readFileSync(localListPath, 'utf8'))['add-ons'];
-
+const getVersionsData = async () => {
   if (!await checkServerAvailability()) throw new Error('CDN server is currently unreachable');
+  return JSON.parse(await fetchUrl(`${CDN_BASE}/versions.json`));
+};
 
-  return JSON.parse(await fetchUrl(`${CDN_BASE}/${version}/add-ons/list.json`))['add-ons'];
+const getAvailableAddons = async (version) => {
+  const localAddonsDir = path.join(LOCAL_RELEASES_DIR, version, 'add-ons');
+
+  if (fs.existsSync(localAddonsDir)) return fs.readdirSync(localAddonsDir, {withFileTypes: true})
+    .filter(entry => entry.isFile() && entry.name.endsWith('.zip'))
+    .map(entry => entry.name.replace('.zip', ''));
+
+  const versionsData = await getVersionsData();
+  const versionMeta = versionsData.versions[version];
+  return versionMeta?.['add-ons'] || [];
 };
 
 const extractMarkers = (content) => {
@@ -376,6 +383,49 @@ const main = async () => {
   log(`  │  ${COLORS.bold}Simpl Add-on Installer${COLORS.reset} ${COLORS.dim}(${version})${COLORS.reset}${' '.repeat(37 - version.length)}│`);
   log(`  ╰${'─'.repeat(62)}╯`);
   console.log();
+
+  let versionsData;
+
+  try {
+    versionsData = await getVersionsData();
+  } catch (error) {
+    console.log();
+    log(`  ${COLORS.red}✗${COLORS.reset} Failed to fetch version data`, 'red');
+    if (error.message === 'CDN server is currently unreachable') log(`  ${COLORS.dim}The CDN server is currently unavailable. Please try again later.${COLORS.reset}`);
+    console.log();
+    process.exit(1);
+  }
+
+  const versionMeta = versionsData.versions[version];
+  if (!versionMeta) {
+    console.log();
+    log(`  ${COLORS.red}✗${COLORS.reset} Version ${COLORS.bold}${version}${COLORS.reset} not found`, 'red');
+    console.log();
+    process.exit(1);
+  }
+
+  if (versionMeta['script-compatible'] === false) {
+    console.log();
+    log(`  ${COLORS.red}✗${COLORS.reset} Version ${COLORS.bold}${version}${COLORS.reset} is not compatible with this installer`, 'red');
+    console.log();
+    log(`  ${COLORS.bold}Manual download:${COLORS.reset}`, 'blue');
+    log(`    ${COLORS.cyan}${CDN_BASE}/${version}/add-ons/`, 'cyan');
+    console.log();
+    log(`  ${COLORS.bold}Available add-ons for this version:${COLORS.reset}`, 'blue');
+
+    const addons = versionMeta['add-ons'] || [];
+    if (addons.length === 0) {
+      log(`    ${COLORS.dim}No add-ons available${COLORS.reset}`);
+    } else {
+      addons.forEach(name => {
+        log(`    ${COLORS.cyan}•${COLORS.reset} ${name}: ${COLORS.dim}${CDN_BASE}/${version}/add-ons/${name}.zip${COLORS.reset}`);
+      });
+    }
+
+    console.log();
+    process.exit(1);
+  }
+
   log('  📦 Fetching available add-ons...', 'bold');
 
   let addons;
