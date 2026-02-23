@@ -10,7 +10,8 @@ const {exec} = require('child_process');
 const execAsync = promisify(exec);
 
 const COLORS = {
-  reset: '\x1b[0m', green: '\x1b[32m', yellow: '\x1b[33m', red: '\x1b[31m', cyan: '\x1b[36m', blue: '\x1b[34m', gray: '\x1b[90m', bold: '\x1b[1m', dim: '\x1b[2m'
+  reset: '\x1b[0m', green: '\x1b[32m', yellow: '\x1b[33m', red: '\x1b[31m',
+  cyan: '\x1b[36m', blue: '\x1b[34m', gray: '\x1b[90m', bold: '\x1b[1m', dim: '\x1b[2m'
 };
 
 const CDN_BASE = 'https://cdn.simpl.iwanvanderwal.nl/framework';
@@ -124,11 +125,11 @@ const getAvailableAddons = async (version) => {
 
   if (fs.existsSync(localAddonsDir)) return fs.readdirSync(localAddonsDir, {withFileTypes: true})
     .filter(entry => entry.isFile() && entry.name.endsWith('.zip'))
-    .map(entry => entry.name.replace('.zip', ''));
+    .map(entry => entry.name.replace('.zip', ''))
+    .sort();
 
-  const versionsData = await getVersionsData();
-  const versionMeta = versionsData.versions[version];
-  return versionMeta?.['add-ons'] || [];
+  const versionMeta = (await getVersionsData()).versions[version];
+  return (versionMeta?.['add-ons'] || []).sort();
 };
 
 const extractMarkers = (content) => {
@@ -137,9 +138,11 @@ const extractMarkers = (content) => {
   content.split('\n').forEach((line, i) => {
     const afterMatch = line.match(/@addon-insert:after\s*\(\s*["'](.+?)["']\s*\)/);
     const beforeMatch = line.match(/@addon-insert:before\s*\(\s*["'](.+?)["']\s*\)/);
+    const replaceMatch = line.match(/@addon-insert:replace\s*\(\s*["'](.+?)["']\s*\)/);
 
     if (afterMatch) markers.push({type: 'after', lineIndex: i, searchText: afterMatch[1]});
     else if (beforeMatch) markers.push({type: 'before', lineIndex: i, searchText: beforeMatch[1]});
+    else if (replaceMatch) markers.push({type: 'replace', lineIndex: i, markerName: replaceMatch[1]});
     else if (line.includes('@addon-insert:prepend')) markers.push({type: 'prepend', lineIndex: i});
     else if (line.includes('@addon-insert:append')) markers.push({type: 'append', lineIndex: i});
   });
@@ -149,10 +152,12 @@ const extractMarkers = (content) => {
 
 const collectContentBetweenMarkers = (lines, startIndex) => {
   const content = [];
+
   for (let i = startIndex + 1; i < lines.length; i++) {
     if (lines[i].trim().includes('@addon-end')) break;
     content.push(lines[i]);
   }
+
   return content;
 };
 
@@ -178,6 +183,12 @@ const processEnvContent = (content, targetContent) => {
 
 const findInsertIndex = (lines, searchText, type) => {
   for (let i = 0; i < lines.length; i++) if (lines[i].includes(searchText)) return type === 'before' ? i : i + 1;
+  return -1;
+};
+
+const findMarkerLine = (lines, markerName) => {
+  const markerPattern = new RegExp(`@addon-marker\\s*\\(\\s*["']${markerName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["']\\s*\\)`);
+  for (let i = 0; i < lines.length; i++) if (markerPattern.test(lines[i])) return i;
   return -1;
 };
 
@@ -207,7 +218,7 @@ const mergeFile = (targetPath, addonContent, markers, isEnv = false) => {
       const targetSignature = normalizeContent(newContent.split('\n'));
 
       if (signature && targetSignature.includes(signature)) {
-        operations.push({success: false, type: marker.type, lines: content.length, searchText: marker.searchText});
+        operations.push({success: false, type: marker.type, lines: content.length, searchText: marker.searchText || marker.markerName});
         return;
       }
     }
@@ -219,6 +230,18 @@ const mergeFile = (targetPath, addonContent, markers, isEnv = false) => {
       if (!newContent.endsWith('\n')) newContent += '\n';
       newContent += '\n' + content.join('\n') + '\n';
       operations.push({success: true, type: 'append', lines: lineCount});
+    } else if (marker.type === 'replace' && marker.markerName) {
+      const targetLines = newContent.split('\n');
+      const markerLine = findMarkerLine(targetLines, marker.markerName);
+
+      if (markerLine === -1) {
+        operations.push({success: false, type: 'notfound', markerName: marker.markerName});
+        return;
+      }
+
+      targetLines.splice(markerLine, 1, ...content);
+      newContent = targetLines.join('\n');
+      operations.push({success: true, type: 'replace', lines: lineCount, markerName: marker.markerName});
     } else if ((marker.type === 'after' || marker.type === 'before') && marker.searchText) {
       const targetLines = newContent.split('\n');
       const insertIndex = findInsertIndex(targetLines, marker.searchText, marker.type);
@@ -249,10 +272,13 @@ const printMergeResults = (relativePath, isEnv, result) => {
       hasChanges = true;
       if (op.type === 'prepend') log(`${indent}${COLORS.green}✓${COLORS.reset} Prepended ${COLORS.bold}${op.lines}${COLORS.reset} ${varText}${op.lines !== 1 ? 's' : ''} to file start`);
       else if (op.type === 'append') log(`${indent}${COLORS.green}✓${COLORS.reset} Appended ${COLORS.bold}${op.lines}${COLORS.reset} ${varText}${op.lines !== 1 ? 's' : ''} to file end`);
-      else if (op.type === 'after') log(`${indent}${COLORS.green}✓${COLORS.reset} Inserted ${COLORS.bold}${op.lines}${COLORS.reset} ${varText}${op.lines !== 1 ? 's' : ''} ${COLORS.cyan}after${COLORS.reset} "${COLORS.dim}${op.searchText}${COLORS.reset}"`);
-      else if (op.type === 'before') log(`${indent}${COLORS.green}✓${COLORS.reset} Inserted ${COLORS.bold}${op.lines}${COLORS.reset} ${varText}${op.lines !== 1 ? 's' : ''} ${COLORS.cyan}before${COLORS.reset} "${COLORS.dim}${op.searchText}${COLORS.reset}"`);
-    } else if (op.type === 'notfound') log(`${indent}${COLORS.yellow}⚠${COLORS.reset} ${COLORS.yellow}Could not find target:${COLORS.reset} "${COLORS.dim}${op.searchText}${COLORS.reset}"`);
-    else log(`${indent}${COLORS.gray}○${COLORS.reset} ${COLORS.dim}Content already exists (${op.type})${COLORS.reset}`);
+      else if (op.type === 'replace') log(`${indent}${COLORS.green}✓${COLORS.reset} Replaced marker ${COLORS.cyan}${op.markerName}${COLORS.reset} with ${COLORS.bold}${op.lines}${COLORS.reset} ${varText}${op.lines !== 1 ? 's' : ''}`);
+      else if (op.type === 'after') log(`${indent}${COLORS.green}✓${COLORS.reset} Inserted ${COLORS.bold}${op.lines}${COLORS.reset} ${varText}${op.lines !== 1 ? 's' : ''} ${COLORS.cyan}after${COLORS.reset} ${COLORS.dim}${op.searchText}${COLORS.reset}`);
+      else if (op.type === 'before') log(`${indent}${COLORS.green}✓${COLORS.reset} Inserted ${COLORS.bold}${op.lines}${COLORS.reset} ${varText}${op.lines !== 1 ? 's' : ''} ${COLORS.cyan}before${COLORS.reset} ${COLORS.dim}${op.searchText}${COLORS.reset}`);
+    } else if (op.type === 'notfound') {
+      const target = op.markerName ? `marker ${COLORS.dim}${op.markerName}${COLORS.reset}` : `${COLORS.dim}${op.searchText}${COLORS.reset}`;
+      log(`${indent}${COLORS.yellow}⚠${COLORS.reset} ${COLORS.yellow}Could not find target:${COLORS.reset} ${target}`);
+    } else log(`${indent}${COLORS.gray}○${COLORS.reset} ${COLORS.dim}Content already exists (${op.type})${COLORS.reset}`);
   });
 
   return hasChanges;
@@ -380,7 +406,7 @@ const main = async () => {
 
   console.log();
   log(`  ╭${'─'.repeat(62)}╮`);
-  log(`  │  ${COLORS.bold}Simpl Add-on Installer${COLORS.reset} ${COLORS.dim}(${version})${COLORS.reset}${' '.repeat(37 - version.length)}│`);
+  log(`  │  ${COLORS.bold}Simpl Add-on Installer${COLORS.reset} ${COLORS.dim}(v${version})${COLORS.reset}${' '.repeat(35 - version.length)}│`);
   log(`  ╰${'─'.repeat(62)}╯`);
   console.log();
 
@@ -449,29 +475,38 @@ const main = async () => {
   }
 
   log(`  ${COLORS.bold}Available add-ons:${COLORS.reset}`, 'blue');
-  addons.forEach(name => log(`    ${COLORS.cyan}•${COLORS.reset} ${name}`));
+  addons.forEach((name, index) => log(`    ${COLORS.cyan}${index + 1}.${COLORS.reset} ${name}`));
   console.log();
 
   let addonName;
 
   while (true) {
-    addonName = await promptUser('  Add-on to install');
-    if (!addonName) {
-      log(`  ${COLORS.red}✗${COLORS.reset} Add-on name cannot be empty`, 'red');
+    const input = await promptUser(`  Add-on to install ${COLORS.dim}(name or number)${COLORS.reset}`);
+
+    if (!input) {
+      log(`  ${COLORS.red}✗${COLORS.reset} Selection cannot be empty`, 'red');
       console.log();
       continue;
     }
-    if (!addons.includes(addonName)) {
-      log(`  ${COLORS.red}✗${COLORS.reset} Add-on "${addonName}" not found`, 'red');
-      console.log();
-      continue;
+
+    const numInput = parseInt(input, 10);
+    if (!isNaN(numInput) && numInput >= 1 && numInput <= addons.length) {
+      addonName = addons[numInput - 1];
+      break;
     }
-    break;
+
+    if (addons.includes(input)) {
+      addonName = input;
+      break;
+    }
+
+    log(`  ${COLORS.red}✗${COLORS.reset} Invalid selection "${input}"`, 'red');
+    console.log();
   }
 
   console.log();
   log(`  ╭${'─'.repeat(62)}╮`);
-  log(`  │  ${COLORS.bold}Installing: ${COLORS.cyan}${addonName}${COLORS.reset} ${COLORS.dim}(${version})${COLORS.reset}${' '.repeat(46 - addonName.length - version.length)}│`);
+  log(`  │  ${COLORS.bold}Installing: ${COLORS.cyan}${addonName}${COLORS.reset} ${COLORS.dim}(v${version})${COLORS.reset}${' '.repeat(43 - addonName.length - version.length)}│`);
   log(`  ╰${'─'.repeat(62)}╯`);
   console.log();
   log('  📦 Downloading add-on...', 'bold');
