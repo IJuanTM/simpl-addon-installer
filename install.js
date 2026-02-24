@@ -89,13 +89,11 @@ const showHelp = () => {
   console.log();
   log(`  ${COLORS.bold}Usage:${COLORS.reset}`, 'blue');
   log(`    ${COLORS.dim}npx @ijuantm/simpl-addon${COLORS.reset}`);
+  log(`    ${COLORS.dim}npx @ijuantm/simpl-addon <add-on>${COLORS.reset}`);
   log(`    ${COLORS.dim}npx @ijuantm/simpl-addon --help${COLORS.reset}`);
   console.log();
   log(`  ${COLORS.bold}Commands:${COLORS.reset}`, 'blue');
   log(`    ${COLORS.dim}--help, -h${COLORS.reset}    Show this help message`);
-  console.log();
-  log(`  ${COLORS.bold}Examples:${COLORS.reset}`, 'blue');
-  log(`    ${COLORS.dim}npx @ijuantm/simpl-addon${COLORS.reset}`);
   console.log();
   log(`  ${COLORS.bold}Note:${COLORS.reset}`, 'blue');
   log(`    Run this command from the root of your Simpl project.`);
@@ -393,6 +391,8 @@ const main = async () => {
     process.exit(0);
   }
 
+  const directName = firstArg && !firstArg.startsWith('-') ? firstArg : null;
+
   let version;
 
   try {
@@ -452,7 +452,7 @@ const main = async () => {
     process.exit(1);
   }
 
-  log('  📦 Fetching available add-ons...', 'bold');
+  log('  🧰 Fetching available add-ons...', 'bold');
 
   let addons;
 
@@ -474,34 +474,46 @@ const main = async () => {
     process.exit(0);
   }
 
-  log(`  ${COLORS.bold}Available add-ons:${COLORS.reset}`, 'blue');
-  addons.forEach((name, index) => log(`    ${COLORS.cyan}${index + 1}.${COLORS.reset} ${name}`));
-  console.log();
-
   let addonName;
 
-  while (true) {
-    const input = await promptUser(`  Add-on to install ${COLORS.dim}(name or number)${COLORS.reset}`);
-
-    if (!input) {
-      log(`  ${COLORS.red}✗${COLORS.reset} Selection cannot be empty`, 'red');
+  if (directName) {
+    if (!addons.includes(directName)) {
+      log(`  ${COLORS.red}✗${COLORS.reset} Add-on ${COLORS.bold}${directName}${COLORS.reset} not found`, 'red');
       console.log();
-      continue;
+      log(`  ${COLORS.bold}Available add-ons:${COLORS.reset}`, 'blue');
+      addons.forEach((name, index) => log(`    ${COLORS.cyan}${index + 1}.${COLORS.reset} ${name}`));
+      console.log();
+      process.exit(1);
     }
-
-    const numInput = parseInt(input, 10);
-    if (!isNaN(numInput) && numInput >= 1 && numInput <= addons.length) {
-      addonName = addons[numInput - 1];
-      break;
-    }
-
-    if (addons.includes(input)) {
-      addonName = input;
-      break;
-    }
-
-    log(`  ${COLORS.red}✗${COLORS.reset} Invalid selection "${input}"`, 'red');
+    addonName = directName;
+  } else {
+    log(`  ${COLORS.bold}Available add-ons:${COLORS.reset}`, 'blue');
+    addons.forEach((name, index) => log(`    ${COLORS.cyan}${index + 1}.${COLORS.reset} ${name}`));
     console.log();
+
+    while (true) {
+      const input = await promptUser(`  Add-on to install ${COLORS.dim}(name or number)${COLORS.reset}`);
+
+      if (!input) {
+        log(`  ${COLORS.red}✗${COLORS.reset} Selection cannot be empty`, 'red');
+        console.log();
+        continue;
+      }
+
+      const numInput = parseInt(input, 10);
+      if (!isNaN(numInput) && numInput >= 1 && numInput <= addons.length) {
+        addonName = addons[numInput - 1];
+        break;
+      }
+
+      if (addons.includes(input)) {
+        addonName = input;
+        break;
+      }
+
+      log(`  ${COLORS.red}✗${COLORS.reset} Invalid selection "${input}"`, 'red');
+      console.log();
+    }
   }
 
   console.log();
