@@ -1,7 +1,7 @@
 {
   "name": "@ijuantm/simpl-addon",
   "description": "CLI tool to install Simpl framework add-ons.",
-  "version": "2.4.2",
+  "version": "2.4.4",
   "scripts": {
     "link": "npm link",
     "unlink": "npm unlink -g @ijuantm/simpl-addon"

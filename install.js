@@ -136,13 +136,13 @@ const extractMarkers = (content) => {
   const markers = [];
 
   content.split('\n').forEach((line, i) => {
-    const afterMatch = line.match(/@addon-insert:after\s*\(\s*["'](.+?)["']\s*\)/);
-    const beforeMatch = line.match(/@addon-insert:before\s*\(\s*["'](.+?)["']\s*\)/);
-    const replaceMatch = line.match(/@addon-insert:replace\s*\(\s*["'](.+?)["']\s*\)/);
+    const afterMatch = line.match(/@addon-insert:after\s*\(\s*(["'])(.+?)\1\s*\)/);
+    const beforeMatch = line.match(/@addon-insert:before\s*\(\s*(["'])(.+?)\1\s*\)/);
+    const replaceMatch = line.match(/@addon-insert:replace\s*\(\s*(["'])(.+?)\1\s*\)/);
 
-    if (afterMatch) markers.push({type: 'after', lineIndex: i, searchText: afterMatch[1]});
-    else if (beforeMatch) markers.push({type: 'before', lineIndex: i, searchText: beforeMatch[1]});
-    else if (replaceMatch) markers.push({type: 'replace', lineIndex: i, markerName: replaceMatch[1]});
+    if (afterMatch) markers.push({type: 'after', lineIndex: i, searchText: afterMatch[2]});
+    else if (beforeMatch) markers.push({type: 'before', lineIndex: i, searchText: beforeMatch[2]});
+    else if (replaceMatch) markers.push({type: 'replace', lineIndex: i, markerName: replaceMatch[2]});
     else if (line.includes('@addon-insert:prepend')) markers.push({type: 'prepend', lineIndex: i});
     else if (line.includes('@addon-insert:append')) markers.push({type: 'append', lineIndex: i});
   });
@@ -406,7 +406,7 @@ const main = async () => {
 
   console.log();
   log(`  ╭${'─'.repeat(62)}╮`);
-  log(`  │  ${COLORS.bold}Simpl Add-on Installer${COLORS.reset} ${COLORS.dim}(v${version})${COLORS.reset}${' '.repeat(35 - version.length)}│`);
+  log(`  │  ${COLORS.bold}Simpl Add-on Installer${COLORS.reset} ${COLORS.dim}(v${version})${COLORS.reset}${' '.repeat(34 - version.length)}│`);
   log(`  ╰${'─'.repeat(62)}╯`);
   console.log();
 
@@ -506,10 +506,10 @@ const main = async () => {
 
   console.log();
   log(`  ╭${'─'.repeat(62)}╮`);
-  log(`  │  ${COLORS.bold}Installing: ${COLORS.cyan}${addonName}${COLORS.reset} ${COLORS.dim}(v${version})${COLORS.reset}${' '.repeat(43 - addonName.length - version.length)}│`);
+  log(`  │  ${COLORS.bold}Installing: ${COLORS.cyan}${addonName}${COLORS.reset} ${COLORS.dim}(v${version})${COLORS.reset}${' '.repeat(44 - addonName.length - version.length)}│`);
   log(`  ╰${'─'.repeat(62)}╯`);
   console.log();
-  log('  📦 Downloading add-on...', 'bold');
+  log(`  📦 Downloading ${COLORS.cyan}${addonName}${COLORS.reset} add-on...`, 'bold');
 
   let copied, skipped, toMerge;
 
