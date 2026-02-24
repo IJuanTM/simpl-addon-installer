@@ -452,7 +452,7 @@ const main = async () => {
     process.exit(1);
   }
 
-  if (!directName) log('  🧰 Fetching available add-ons...', 'bold');
+  if (!directName) log('  🗄️ Fetching available add-ons...', 'bold');
 
   let addons;
 
