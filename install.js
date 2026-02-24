@@ -404,13 +404,11 @@ const main = async () => {
     process.exit(1);
   }
 
-  if (!directName) {
-    console.log();
-    log(`  ╭${'─'.repeat(62)}╮`);
-    log(`  │  ${COLORS.bold}Simpl Add-on Installer${COLORS.reset} ${COLORS.dim}(v${version})${COLORS.reset}${' '.repeat(34 - version.length)}│`);
-    log(`  ╰${'─'.repeat(62)}╯`);
-    console.log();
-  }
+  console.log();
+  log(`  ╭${'─'.repeat(62)}╮`);
+  log(`  │  ${COLORS.bold}Simpl Add-on Installer${COLORS.reset} ${COLORS.dim}(v${version})${COLORS.reset}${' '.repeat(34 - version.length)}│`);
+  log(`  ╰${'─'.repeat(62)}╯`);
+  console.log();
 
   let versionsData;
 
