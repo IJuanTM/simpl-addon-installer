@@ -408,7 +408,6 @@ const main = async () => {
   log(`  ╭${'─'.repeat(62)}╮`);
   log(`  │  ${COLORS.bold}Simpl Add-on Installer${COLORS.reset} ${COLORS.dim}(v${version})${COLORS.reset}${' '.repeat(34 - version.length)}│`);
   log(`  ╰${'─'.repeat(62)}╯`);
-  console.log();
 
   let versionsData;
 
@@ -440,19 +439,19 @@ const main = async () => {
     log(`  ${COLORS.bold}Available add-ons for this version:${COLORS.reset}`, 'blue');
 
     const addons = versionMeta['add-ons'] || [];
-    if (addons.length === 0) {
-      log(`    ${COLORS.dim}No add-ons available${COLORS.reset}`);
-    } else {
-      addons.forEach(name => {
-        log(`    ${COLORS.cyan}•${COLORS.reset} ${name}: ${COLORS.dim}${CDN_BASE}/${version}/add-ons/${name}.zip${COLORS.reset}`);
-      });
-    }
+    if (addons.length === 0) log(`    ${COLORS.dim}No add-ons available${COLORS.reset}`);
+    else addons.forEach(name => {
+      log(`    ${COLORS.cyan}•${COLORS.reset} ${name}: ${COLORS.dim}${CDN_BASE}/${version}/add-ons/${name}.zip${COLORS.reset}`);
+    });
 
     console.log();
     process.exit(1);
   }
 
-  if (!directName) log('  🗄️ Fetching available add-ons...', 'bold');
+  if (!directName) {
+    console.log();
+    log('  🗄️ Fetching available add-ons...', 'bold');
+  }
 
   let addons;
 
