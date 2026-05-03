@@ -184,12 +184,6 @@ const findInsertIndex = (lines, searchText, type) => {
   return -1;
 };
 
-const findMarkerLine = (lines, markerName) => {
-  const markerPattern = new RegExp(`@addon-marker\\s*\\(\\s*["']${markerName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["']\\s*\\)`);
-  for (let i = 0; i < lines.length; i++) if (markerPattern.test(lines[i])) return i;
-  return -1;
-};
-
 const mergeFile = (targetPath, addonContent, markers, isEnv = false) => {
   const targetContent = fs.readFileSync(targetPath, 'utf8');
   const addonLines = addonContent.split('\n');
@@ -230,14 +224,14 @@ const mergeFile = (targetPath, addonContent, markers, isEnv = false) => {
       operations.push({success: true, type: 'append', lines: lineCount});
     } else if (marker.type === 'replace' && marker.markerName) {
       const targetLines = newContent.split('\n');
-      const markerLine = findMarkerLine(targetLines, marker.markerName);
+      const replaceIndex = findInsertIndex(targetLines, marker.markerName, 'before');
 
-      if (markerLine === -1) {
-        operations.push({success: false, type: 'notfound', markerName: marker.markerName});
+      if (replaceIndex === -1) {
+        operations.push({success: false, type: 'notfound', searchText: marker.markerName});
         return;
       }
 
-      targetLines.splice(markerLine, 1, ...content);
+      targetLines.splice(replaceIndex, 1, ...content);
       newContent = targetLines.join('\n');
       operations.push({success: true, type: 'replace', lines: lineCount, markerName: marker.markerName});
     } else if ((marker.type === 'after' || marker.type === 'before') && marker.searchText) {

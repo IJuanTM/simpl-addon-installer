@@ -44,6 +44,7 @@ new AuthController();
 
 - `@addon-insert:after('text')` - Insert content after matching line
 - `@addon-insert:before('text')` - Insert content before matching line
+- `@addon-insert:replace('text')` - Replace matching line with content
 - `@addon-insert:prepend` - Add content at the beginning of the file
 - `@addon-insert:append` - Add content at the end of the file
 
