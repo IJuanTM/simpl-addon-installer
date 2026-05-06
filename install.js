@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const https = require('https');
 const readline = require('readline');
 const {promisify} = require('util');
@@ -18,6 +19,7 @@ const CDN_BASE = 'https://cdn.simpl.iwanvanderwal.nl/framework';
 const LOCAL_RELEASES_DIR = process.env.SIMPL_LOCAL_RELEASES || path.join(process.cwd(), 'local-releases');
 const BOX_WIDTH = 62;
 const PAD = '  ';
+const TEMP_DIR_PREFIX = 'simpl-addon-';
 
 const styled = (msg, ...styles) => styles.join('') + msg + C.reset;
 const line = (msg = '') => console.log(msg);
@@ -27,7 +29,7 @@ const prefixed = (symbol, color, msg, bold = false, dim = false) => out(PAD + co
 const success = (msg, bold = false) => prefixed('✓', C.green, msg, bold);
 const error = (msg, bold = false) => prefixed('✕', C.red, msg, bold);
 const warn = (msg, bold = false) => prefixed('⚠', C.yellow, msg, bold);
-const info = (msg) => prefixed('ℹ', C.cyan, msg, false, true);
+const info = (msg) => prefixed('◌', C.cyan, msg, false, true);
 const task = (msg) => out(PAD + msg);
 const item = (msg, dim = false) => out(PAD + C.cyan + '•' + C.reset + ' ' + (dim ? styled(msg, C.dim) : msg));
 
@@ -40,7 +42,6 @@ const box = (title) => {
   out(PAD + '╭' + '─'.repeat(BOX_WIDTH) + '╮');
   out(PAD + '│ ' + styled(displayTitle, C.bold) + spaces + ' │');
   out(PAD + '╰' + '─'.repeat(BOX_WIDTH) + '╯');
-  line();
 };
 
 const divider = () => {
@@ -51,37 +52,58 @@ const divider = () => {
 
 const printAnswer = (question, value) => out(`${question}: ${C.cyan}${value}${C.reset}`);
 
+const cleanupPath = (targetPath) => {
+  try {
+    fs.rmSync(targetPath, {recursive: true, force: true});
+  } catch {
+  }
+};
+
+const resolveRedirectUrl = (baseUrl, location) => new URL(location, baseUrl).toString();
+
+const isRedirect = (statusCode) => [301, 302].includes(statusCode);
+const checkStatus = (statusCode, statusMessage, location, url) => {
+  if (isRedirect(statusCode)) {
+    if (!location) throw new Error(`HTTP ${statusCode}: Redirect missing location`);
+    return resolveRedirectUrl(url, location);
+  }
+  if (statusCode !== 200) throw new Error(`HTTP ${statusCode}: ${statusMessage || 'Request failed'}`);
+  return null;
+};
+
 const fetchUrl = (url) => new Promise((resolve, reject) => {
   https.get(url, res => {
-    if (res.statusCode === 301 || res.statusCode === 302) return fetchUrl(res.headers.location).then(resolve).catch(reject);
-    if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}: ${res.statusMessage || 'Request failed'}`));
+    try {
+      const redirect = checkStatus(res.statusCode, res.statusMessage, res.headers.location, url);
+      if (redirect) return fetchUrl(redirect).then(resolve).catch(reject);
+    } catch (err) {
+      return reject(err);
+    }
     let data = '';
     res.on('data', chunk => data += chunk);
     res.on('end', () => resolve(data));
-  }).on('error', reject);
+  }).on('error', reject).setTimeout(10000, () => reject(new Error('Request timed out')));
 });
 
 const downloadFile = (url, dest) => new Promise((resolve, reject) => {
   const file = fs.createWriteStream(dest);
+  let settled = false;
   const fail = (err) => {
-    try {
-      fs.unlinkSync(dest);
-    } catch {
-    }
+    if (settled) return;
+    settled = true;
+    cleanupPath(dest);
     reject(err);
   };
 
   https.get(url, res => {
-    if (res.statusCode === 301 || res.statusCode === 302) {
-      fs.unlinkSync(dest);
-      return downloadFile(res.headers.location, dest).then(resolve).catch(reject);
+    try {
+      const redirect = checkStatus(res.statusCode, res.statusMessage, res.headers.location, url);
+      if (redirect) return downloadFile(redirect, dest).then(resolve).catch(reject);
+    } catch (err) {
+      return fail(err);
     }
-    if (res.statusCode !== 200) return fail(new Error(`HTTP ${res.statusCode}: ${res.statusMessage || 'Request failed'}`));
     res.pipe(file);
-    file.on('finish', () => {
-      file.close();
-      resolve();
-    });
+    file.on('finish', () => file.close(err => err ? fail(err) : resolve()));
   }).on('error', fail);
   file.on('error', fail);
 });
@@ -131,21 +153,23 @@ const closestMatch = (input, options) => {
 
 const listAddons = (addons) => addons.forEach((name, i) => out(PAD + C.cyan + `${i + 1}.` + C.reset + ' ' + name));
 
+const confirmSuggestion = async (suggestion) => {
+  line();
+  while (true) {
+    const a = (await promptUser(PAD + `${C.cyan}◌${C.reset} ${C.dim}Did you mean${C.reset} ${C.cyan}${suggestion}${C.reset}${C.dim}?${C.reset} ([Y] Yes / [N] No)`)).toLowerCase();
+    if (['y', 'yes'].includes(a)) return true;
+    if (['n', 'no'].includes(a)) return false;
+    warn('Please answer [Y] Yes or [N] No)');
+    line();
+  }
+};
+
 const promptAddon = async (addons, firstInput = null) => {
   const askSuggestion = async (input) => {
-    const suggestion = closestMatch(input, addons);
     line();
     error(`Add-on ${styled(input, C.bold)} not found`);
-    if (suggestion) {
-      out(PAD + `Did you mean: ${C.blue}${suggestion}${C.reset}?`);
-      line();
-      while (true) {
-        const a = (await promptUser(PAD + `Use "${suggestion}"? ${C.dim}(yes / no (lists available add-ons))${C.reset}`)).toLowerCase();
-        if (a === 'yes' || a === 'y') return suggestion;
-        if (a === 'no' || a === 'n') break;
-        warn('Please answer yes or no');
-      }
-    }
+    const suggestion = closestMatch(input, addons);
+    if (suggestion && await confirmSuggestion(suggestion)) return suggestion;
     line();
     out(PAD + styled('Available add-ons:', C.bold), C.blue);
     listAddons(addons);
@@ -172,6 +196,7 @@ const promptAddon = async (addons, firstInput = null) => {
 
 const showHelp = () => {
   box('Simpl Add-on Installer');
+  line();
   out(PAD + styled('Usage:', C.bold), C.blue);
   out(PAD + styled('npx @ijuantm/simpl-addon', C.dim));
   out(PAD + styled('npx @ijuantm/simpl-addon --addon=<name>', C.dim));
@@ -192,13 +217,15 @@ const checkServerAvailability = () => new Promise(resolve => {
   https.get(`${CDN_BASE}/versions.json`, {timeout: 5000}, res => {
     res.resume();
     resolve(res.statusCode === 200);
-  })
-    .on('error', () => resolve(false)).on('timeout', () => resolve(false));
+  }).on('error', () => resolve(false)).on('timeout', () => resolve(false));
 });
 
 const getVersionsData = async () => {
-  if (!await checkServerAvailability()) throw new Error('CDN server is currently unreachable');
-  return JSON.parse(await fetchUrl(`${CDN_BASE}/versions.json`));
+  try {
+    return JSON.parse(await fetchUrl(`${CDN_BASE}/versions.json`));
+  } catch {
+    return {versions: {}};
+  }
 };
 
 const getSimplVersion = () => {
@@ -358,10 +385,10 @@ const extractZip = async (zipPath, destDir) => {
   const entries = fs.readdirSync(destDir, {withFileTypes: true});
   if (entries.length === 1 && entries[0].isDirectory()) {
     const nestedDir = path.join(destDir, entries[0].name);
-    for (const item of fs.readdirSync(nestedDir)) fs.renameSync(path.join(nestedDir, item), path.join(destDir, item));
-    fs.rmdirSync(nestedDir);
+    for (const item of fs.readdirSync(nestedDir, {withFileTypes: true}))
+      fs.cpSync(path.join(nestedDir, item.name), path.join(destDir, item.name), {recursive: true});
+    fs.rmSync(nestedDir, {recursive: true, force: true});
   }
-  return destDir;
 };
 
 const processAddonFiles = (addonDir, targetDir) => {
@@ -398,29 +425,28 @@ const processAddonFiles = (addonDir, targetDir) => {
 
 const downloadAddon = async (addonName, version, targetDir) => {
   const localZipPath = path.join(LOCAL_RELEASES_DIR, version, 'add-ons', `${addonName}.zip`);
-  const tempExtract = path.join(process.cwd(), '__temp_extract_addon__');
 
-  try {
-    if (fs.existsSync(localZipPath)) {
-      line();
-      task('💻 Using local add-on files');
-      const sourceDir = await extractZip(localZipPath, tempExtract);
-      const result = processAddonFiles(sourceDir, targetDir);
-      fs.rmSync(tempExtract, {recursive: true, force: true});
-      return result;
+  if (fs.existsSync(localZipPath)) {
+    line();
+    task('💻 Using local add-on files');
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), TEMP_DIR_PREFIX));
+    try {
+      await extractZip(localZipPath, tempDir);
+      return processAddonFiles(tempDir, targetDir);
+    } finally {
+      cleanupPath(tempDir);
     }
+  }
 
-    if (!await checkServerAvailability()) throw new Error('CDN server is currently unreachable');
-    const tempZip = path.join(process.cwd(), `temp-addon-${addonName}.zip`);
+  if (!await checkServerAvailability()) throw new Error('CDN server is currently unreachable');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), TEMP_DIR_PREFIX));
+  const tempZip = path.join(tempDir, `${addonName}.zip`);
+  try {
     await downloadFile(`${CDN_BASE}/${version}/add-ons/${addonName}.zip`, tempZip);
-    const sourceDir = await extractZip(tempZip, tempExtract);
-    const result = processAddonFiles(sourceDir, targetDir);
-    fs.unlinkSync(tempZip);
-    fs.rmSync(tempExtract, {recursive: true, force: true});
-    return result;
-  } catch (err) {
-    if (fs.existsSync(tempExtract)) fs.rmSync(tempExtract, {recursive: true, force: true});
-    throw err;
+    await extractZip(tempZip, tempDir);
+    return processAddonFiles(tempDir, targetDir);
+  } finally {
+    cleanupPath(tempDir);
   }
 };
 
@@ -452,14 +478,15 @@ const main = async () => {
     process.exit(0);
   }
 
-  for (const flag of parsed.unknownFlags) {
-    const flagName = flag.includes('=') ? flag.slice(0, flag.indexOf('=')) : flag;
-    const suggestion = closestMatch(flagName, KNOWN_FLAGS);
-    line();
-    warn(`Unknown option: ${styled(flag, C.bold)}`);
-    if (suggestion) info(`Did you mean ${C.cyan}${suggestion}${C.reset}?`);
-  }
   if (parsed.unknownFlags.length) {
+    for (const flag of parsed.unknownFlags) {
+      const flagName = flag.includes('=') ? flag.slice(0, flag.indexOf('=')) : flag;
+      line();
+      warn(`Unknown option: ${styled(flag, C.bold)}`);
+      line();
+      const suggestion = closestMatch(flagName, KNOWN_FLAGS);
+      if (suggestion) info(`Did you mean ${C.cyan}${suggestion}${C.reset}${C.dim}?${C.reset}`);
+    }
     info('Run with --help to see all available options.');
     line();
     process.exit(1);
@@ -475,20 +502,11 @@ const main = async () => {
     process.exit(1);
   }
 
-  line();
   box(`Simpl Add-on Installer ${C.dim}(v${version})${C.reset}`);
 
-  let versionsData;
-  try {
-    versionsData = await getVersionsData();
-  } catch {
-    error('Failed to fetch version data');
-    info('The CDN server is currently unavailable. Please try again later.');
-    line();
-    process.exit(1);
-  }
+  const {versions} = await getVersionsData();
 
-  const versionMeta = versionsData.versions[version];
+  const versionMeta = versions[version];
   if (!versionMeta) {
     line();
     error(`Version ${styled(version, C.bold)} not found`);
@@ -554,8 +572,8 @@ const main = async () => {
     addonName = await promptAddon(addons);
   }
 
-  line();
   box(`Installing: ${C.cyan}${addonName}${C.reset} ${C.dim}(v${version})${C.reset}`);
+  line();
   task(`📦 Downloading ${C.cyan}${addonName}${C.reset} add-on...`);
 
   let copied, skipped, toMerge;
