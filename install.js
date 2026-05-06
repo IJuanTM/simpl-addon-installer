@@ -155,7 +155,7 @@ const listAddons = (addons) => addons.forEach((name, i) => out(PAD + C.cyan + `$
 const confirmSuggestion = async (suggestion) => {
   line();
   while (true) {
-    const a = (await promptUser(PAD + `${C.cyan}◌${C.reset} ${C.dim}Did you mean${C.reset} ${C.cyan}${suggestion}${C.reset}${C.dim}? [y/${C.reset}N${C.dim}]${C.reset}`, 'no')).toLowerCase();
+    const a = (await promptUser(PAD + `${C.cyan}◌${C.reset} ${C.dim}Did you mean${C.reset} ${C.cyan}${suggestion}${C.reset}${C.dim}?${C.reset} [y/N]`, 'no')).toLowerCase();
     if (['y', 'yes'].includes(a)) return true;
     if (['n', 'no'].includes(a)) return false;
     warn('Please answer [Y] Yes or [N] No)');
