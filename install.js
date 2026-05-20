@@ -195,17 +195,18 @@ const promptAddon = async (addons, firstInput = null) => {
 };
 
 const showHelp = () => {
-  box('Simpl Add-on Installer');
-  line();
-  out(PAD + styled('Usage:', C.bold), C.blue);
-  out(PAD + styled('npx @ijuantm/simpl-addon', C.dim));
-  out(PAD + styled('npx @ijuantm/simpl-addon --addon=<name>', C.dim));
-  out(PAD + styled('npx @ijuantm/simpl-addon --help', C.dim));
+  box(`Simpl Add-on Installer ${C.dim}-${C.reset} ${C.blue}Help${C.reset}`);
   line();
   out(PAD + styled('Options:', C.bold), C.blue);
   out(PAD + styled('--addon=<name>, -a=<name>', C.dim) + ' Add-on to install');
   out(PAD + styled('--list, -l', C.dim) + '              List available add-ons');
   out(PAD + styled('--help, -h', C.dim) + '              Show this help message');
+  line();
+  out(PAD + styled('Usage:', C.bold), C.blue);
+  out(PAD + styled('npx @ijuantm/simpl-addon', C.dim));
+  out(PAD + styled('npx @ijuantm/simpl-addon --addon=<name>', C.dim));
+  out(PAD + styled('npx @ijuantm/simpl-addon --list', C.dim));
+  out(PAD + styled('npx @ijuantm/simpl-addon -h', C.dim));
   line();
   out(PAD + styled('Note:', C.bold), C.blue);
   item('Run this command from the root of your Simpl project.');
@@ -563,6 +564,8 @@ const main = async () => {
   let addonName;
   if (parsed.addon) {
     addonName = await promptAddon(addons, parsed.addon);
+
+    line();
     printAnswer(PAD + 'Add-on to install', addonName);
   } else {
     line();
