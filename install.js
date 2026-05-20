@@ -471,20 +471,48 @@ const mergeFiles = (toMerge) => {
   return {merged, failed, unchanged};
 };
 
+const loadAddons = async (version) => {
+  const {versions} = await getVersionsData();
+  const versionMeta = versions[version];
+
+  if (!versionMeta) {
+    line();
+    error(`Version ${styled(version, C.bold)} not found`);
+    line();
+    process.exit(1);
+  }
+
+  if (versionMeta['script-compatible'] === false) {
+    line();
+    error(`Version ${styled(version, C.bold)} is not compatible with this installer`);
+    line();
+    out(PAD + styled('Manual download:', C.bold), C.blue);
+    item(`${C.cyan}${CDN_BASE}/${version}/add-ons/`);
+    line();
+    out(PAD + styled('Available add-ons for this version:', C.bold), C.blue);
+    const addons = versionMeta['add-ons'] || [];
+    if (!addons.length) info('No add-ons available');
+    else for (const name of addons) item(`${name}: ${styled(`${CDN_BASE}/${version}/add-ons/${name}.zip`, C.dim)}`);
+    line();
+    process.exit(1);
+  }
+
+  try {
+    return await getAvailableAddons(version);
+  } catch {
+    line();
+    error('Failed to fetch add-ons');
+    info('The CDN server is currently unavailable. Please try again later.');
+    line();
+    process.exit(1);
+  }
+};
+
 const main = async () => {
   const parsed = parseArgs(process.argv.slice(2));
 
   if (parsed.help) {
     showHelp();
-    process.exit(0);
-  }
-
-  if (parsed.list) {
-    box(`Simpl Add-on Installer ${C.dim}-${C.reset} ${C.blue}Available Add-ons${C.reset}`);
-    line();
-    out(PAD + styled('Available add-ons:', C.bold), C.blue);
-    listAddons(addons);
-    line();
     process.exit(0);
   }
 
@@ -512,48 +540,25 @@ const main = async () => {
     process.exit(1);
   }
 
+  if (parsed.list) {
+    const addons = await loadAddons(version);
+    box(`Simpl Add-on Installer ${C.dim}-${C.reset} ${C.blue}Available Add-ons${C.reset}`);
+    line();
+    out(PAD + styled('Available add-ons:', C.bold), C.blue);
+    if (!addons.length) info('No add-ons available for this version');
+    else listAddons(addons);
+    line();
+    process.exit(0);
+  }
+
   box(`Simpl Add-on Installer ${C.dim}(v${version})${C.reset}`);
-
-  const {versions} = await getVersionsData();
-
-  const versionMeta = versions[version];
-  if (!versionMeta) {
-    line();
-    error(`Version ${styled(version, C.bold)} not found`);
-    line();
-    process.exit(1);
-  }
-
-  if (versionMeta['script-compatible'] === false) {
-    line();
-    error(`Version ${styled(version, C.bold)} is not compatible with this installer`);
-    line();
-    out(PAD + styled('Manual download:', C.bold), C.blue);
-    item(`${C.cyan}${CDN_BASE}/${version}/add-ons/`);
-    line();
-    out(PAD + styled('Available add-ons for this version:', C.bold), C.blue);
-    const addons = versionMeta['add-ons'] || [];
-    if (!addons.length) info('No add-ons available');
-    else for (const name of addons) item(`${name}: ${styled(`${CDN_BASE}/${version}/add-ons/${name}.zip`, C.dim)}`);
-    line();
-    process.exit(1);
-  }
 
   if (!parsed.addon) {
     line();
     task('🗄️ Fetching available add-ons...');
   }
 
-  let addons;
-  try {
-    addons = await getAvailableAddons(version);
-  } catch {
-    line();
-    error('Failed to fetch add-ons');
-    info('The CDN server is currently unavailable. Please try again later.');
-    line();
-    process.exit(1);
-  }
+  const addons = await loadAddons(version);
 
   if (!addons.length) {
     line();
