@@ -479,6 +479,15 @@ const main = async () => {
     process.exit(0);
   }
 
+  if (parsed.list) {
+    box(`Simpl Add-on Installer ${C.dim}-${C.reset} ${C.blue}Available Add-ons${C.reset}`);
+    line();
+    out(PAD + styled('Available add-ons:', C.bold), C.blue);
+    listAddons(addons);
+    line();
+    process.exit(0);
+  }
+
   if (parsed.unknownFlags.length) {
     for (const flag of parsed.unknownFlags) {
       const flagName = flag.includes('=') ? flag.slice(0, flag.indexOf('=')) : flag;
@@ -549,14 +558,6 @@ const main = async () => {
   if (!addons.length) {
     line();
     warn('No add-ons available for this version');
-    line();
-    process.exit(0);
-  }
-
-  if (parsed.list) {
-    line();
-    out(PAD + styled('Available add-ons:', C.bold), C.blue);
-    listAddons(addons);
     line();
     process.exit(0);
   }
