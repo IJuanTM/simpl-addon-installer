@@ -16,7 +16,7 @@ const C = {
 };
 
 const CDN_BASE = 'https://cdn.simpl.iwanvanderwal.nl/framework';
-const LOCAL_RELEASES_DIR = process.env.SIMPL_LOCAL_RELEASES || path.join(process.cwd(), 'local-releases');
+const LOCAL_RELEASES_DIR = process.env.SIMPL_LOCAL_RELEASES || path.join(process.cwd(), 'simpl-local-releases');
 const BOX_WIDTH = 62;
 const PAD = '  ';
 const TEMP_DIR_PREFIX = 'simpl-addon-';
@@ -118,10 +118,11 @@ const promptUser = (question, defaultValue = '') => new Promise(resolve => {
 });
 
 const parseArgs = (args) => {
-  const result = {addon: null, unknownFlags: [], help: false, list: false};
+  const result = {addon: null, unknownFlags: [], help: false, list: false, local: false};
   for (const arg of args) {
     if (arg === '--help' || arg === '-h') result.help = true;
     else if (arg === '--list' || arg === '-l') result.list = true;
+    else if (arg === '--local') result.local = true;
     else if (arg.startsWith('--addon=')) result.addon = arg.slice(8).trim() || null;
     else if (arg.startsWith('-a=')) result.addon = arg.slice(3).trim() || null;
     else if (arg.startsWith('-') && !arg.startsWith('--addon') && !arg.startsWith('-a')) result.unknownFlags.push(arg);
@@ -130,7 +131,7 @@ const parseArgs = (args) => {
   return result;
 };
 
-const KNOWN_FLAGS = ['--addon', '-a', '--help', '-h', '--list', '-l'];
+const KNOWN_FLAGS = ['--addon', '-a', '--help', '-h', '--list', '-l', '--local'];
 
 const levenshtein = (a, b) => {
   const m = a.length, n = b.length;
@@ -200,6 +201,7 @@ const showHelp = () => {
   out(PAD + styled('Options:', C.bold), C.blue);
   out(PAD + styled('--addon=<name>, -a=<name>', C.dim) + ' Add-on to install');
   out(PAD + styled('--list, -l', C.dim) + '              List available add-ons');
+  out(PAD + styled('--local', C.dim) + '                 Use local release files');
   out(PAD + styled('--help, -h', C.dim) + '              Show this help message');
   line();
   out(PAD + styled('Usage:', C.bold), C.blue);
@@ -424,8 +426,10 @@ const processAddonFiles = (addonDir, targetDir) => {
   return {copied, skipped, toMerge};
 };
 
-const downloadAddon = async (addonName, version, targetDir) => {
+const downloadAddon = async (addonName, version, targetDir, forceLocal = false) => {
   const localZipPath = path.join(LOCAL_RELEASES_DIR, version, 'add-ons', `${addonName}.zip`);
+
+  if (forceLocal && !fs.existsSync(localZipPath)) throw new Error(`Local release not found: ${localZipPath}`);
 
   if (fs.existsSync(localZipPath)) {
     line();
@@ -587,11 +591,12 @@ const main = async () => {
 
   let copied, skipped, toMerge;
   try {
-    ({copied, skipped, toMerge} = await downloadAddon(addonName, version, process.cwd()));
+    ({copied, skipped, toMerge} = await downloadAddon(addonName, version, process.cwd(), parsed.local));
   } catch (err) {
     line();
     error('Installation failed');
     if (err.message === 'CDN server is currently unreachable') info('The CDN server is currently unavailable. Please try again later.');
+    else if (err.message.includes('Local release not found')) info(err.message);
     else info('Please verify the add-on exists and try again');
     line();
     process.exit(1);
