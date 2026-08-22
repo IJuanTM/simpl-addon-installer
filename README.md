@@ -78,8 +78,9 @@ The installer also:
 - Creates new files that do not exist
 - Skips files without markers instead of overwriting them
 - Avoids adding the same content twice
+- Installs an add-on's dependencies first (with confirmation) if they're missing from the project
 
 ## Requirements
 
-- **Node.js**: >= 22
+- **Node.js**: >= 24
 - **Simpl Framework**: A Simpl project with a valid `.simpl` file in the project root

@@ -154,16 +154,18 @@ const closestMatch = (input, options) => {
 
 const listAddons = (addons) => addons.forEach((name, i) => out(PAD + C.cyan + `${i + 1}.` + C.reset + ' ' + name));
 
-const confirmSuggestion = async (suggestion) => {
+const confirmPrompt = async (promptText, defaultValue = 'n') => {
   line();
   while (true) {
-    const a = (await promptUser(PAD + `${C.cyan}◌${C.reset} ${C.dim}Did you mean${C.reset} ${C.cyan}${suggestion}${C.reset}${C.dim}?${C.reset}`, 'n')).toLowerCase();
+    const a = (await promptUser(PAD + promptText, defaultValue)).toLowerCase();
     if (['y', 'yes'].includes(a)) return true;
     if (['n', 'no'].includes(a)) return false;
     warn('Please answer [Y] Yes or [N] No)');
     line();
   }
 };
+
+const confirmSuggestion = (suggestion) => confirmPrompt(`${C.cyan}◌${C.reset} ${C.dim}Did you mean${C.reset} ${C.cyan}${suggestion}${C.reset}${C.dim}?${C.reset}`, 'n');
 
 const promptAddon = async (addons, firstInput = null) => {
   const askSuggestion = async (input) => {
@@ -231,12 +233,32 @@ const getVersionsData = async () => {
   }
 };
 
-const getSimplVersion = () => {
-  const simplFile = path.join(process.cwd(), '.simpl');
-  if (!fs.existsSync(simplFile)) throw new Error('Not a Simpl project. Missing .simpl file in current directory.');
-  const config = JSON.parse(fs.readFileSync(simplFile, 'utf8'));
+const SIMPL_FILE = path.join(process.cwd(), '.simpl');
+
+const getSimplConfig = () => {
+  if (!fs.existsSync(SIMPL_FILE)) throw new Error('Not a Simpl project. Missing .simpl file in current directory.');
+  const config = JSON.parse(fs.readFileSync(SIMPL_FILE, 'utf8'));
   if (!config.version) throw new Error('Invalid .simpl file: missing version field');
-  return config.version;
+  return config;
+};
+
+const markAddonInstalled = (addonName) => {
+  const config = getSimplConfig();
+  const addons = new Set(config.addons || []);
+  addons.add(addonName);
+  config.addons = [...addons].sort();
+  fs.writeFileSync(SIMPL_FILE, JSON.stringify(config, null, 2) + '\n', 'utf8');
+};
+
+const readAddonManifest = (addonDir) => {
+  const manifestPath = path.join(addonDir, 'addon.json');
+  if (!fs.existsSync(manifestPath)) return {dependencies: []};
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    return {dependencies: Array.isArray(manifest.dependencies) ? manifest.dependencies : []};
+  } catch {
+    return {dependencies: []};
+  }
 };
 
 const getAvailableAddons = async (version) => {
@@ -399,7 +421,7 @@ const processAddonFiles = (addonDir, targetDir) => {
 
   const processDirectory = (dir, basePath = '') => {
     for (const entry of fs.readdirSync(dir, {withFileTypes: true})) {
-      if (entry.name === 'README.md') continue;
+      if (entry.name === 'README.md' || entry.name === 'addon.json') continue;
       const srcPath = path.join(dir, entry.name);
       const relativePath = path.join(basePath, entry.name).replace(/\\/g, '/');
       const destPath = path.join(targetDir, relativePath);
@@ -426,30 +448,114 @@ const processAddonFiles = (addonDir, targetDir) => {
   return {copied, skipped, toMerge};
 };
 
-const downloadAddon = async (addonName, version, targetDir, forceLocal = false) => {
+const fetchAddonPayload = async (addonName, version, forceLocal = false) => {
   const localZipPath = path.join(LOCAL_RELEASES_DIR, version, 'add-ons', `${addonName}.zip`);
 
   if (forceLocal && !fs.existsSync(localZipPath)) throw new Error(`Local release not found: ${localZipPath}`);
 
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), TEMP_DIR_PREFIX));
+
   if (fs.existsSync(localZipPath)) {
     line();
     task('💻 Using local add-on files');
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), TEMP_DIR_PREFIX));
-    try {
-      await extractZip(localZipPath, tempDir);
-      return processAddonFiles(tempDir, targetDir);
-    } finally {
-      cleanupPath(tempDir);
-    }
+    await extractZip(localZipPath, tempDir);
+    return tempDir;
   }
 
-  if (!await checkServerAvailability()) throw new Error('CDN server is currently unreachable');
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), TEMP_DIR_PREFIX));
-  const tempZip = path.join(tempDir, `${addonName}.zip`);
   try {
+    if (!await checkServerAvailability()) throw new Error('CDN server is currently unreachable');
+    const tempZip = path.join(tempDir, `${addonName}.zip`);
     await downloadFile(`${CDN_BASE}/${version}/add-ons/${addonName}.zip`, tempZip);
     await extractZip(tempZip, tempDir);
-    return processAddonFiles(tempDir, targetDir);
+    fs.rmSync(tempZip, {force: true});
+    return tempDir;
+  } catch (err) {
+    cleanupPath(tempDir);
+    throw err;
+  }
+};
+
+const reportDownloadFailure = (err) => {
+  line();
+  error('Installation failed');
+  if (err.message === 'CDN server is currently unreachable') info('The CDN server is currently unavailable. Please try again later.');
+  else if (err.message.includes('Local release not found')) info(err.message);
+  else info('Please verify the add-on exists and try again');
+  line();
+  process.exit(1);
+};
+
+const installAddon = async (addonName, version, forceLocal, installed, chain = []) => {
+  if (installed.has(addonName)) return;
+
+  if (chain.includes(addonName)) {
+    line();
+    error(`Circular add-on dependency detected: ${styled([...chain, addonName].join(' → '), C.bold)}`);
+    line();
+    process.exit(1);
+  }
+  chain = [...chain, addonName];
+
+  box(`Installing: ${C.cyan}${addonName}${C.reset} ${C.dim}(v${version})${C.reset}`);
+  line();
+  task(`📦 Downloading ${C.cyan}${addonName}${C.reset} add-on...`);
+
+  let tempDir;
+  try {
+    tempDir = await fetchAddonPayload(addonName, version, forceLocal);
+  } catch (err) {
+    reportDownloadFailure(err);
+    return;
+  }
+
+  try {
+    const {dependencies} = readAddonManifest(tempDir);
+    for (const dep of dependencies) {
+      if (installed.has(dep)) continue;
+      line();
+      warn(`${styled(addonName, C.bold)} requires the ${styled(dep, C.bold)} add-on, which is not installed`);
+      if (!await confirmPrompt(`${C.dim}Install${C.reset} ${C.cyan}${dep}${C.reset} ${C.dim}first?${C.reset}`, 'y')) {
+        line();
+        error(`Cannot install ${styled(addonName, C.bold)} without ${styled(dep, C.bold)}`);
+        line();
+        process.exit(1);
+      }
+      await installAddon(dep, version, forceLocal, installed, chain);
+    }
+
+    const {copied, skipped, toMerge} = processAddonFiles(tempDir, process.cwd());
+
+    if (copied.length) {
+      line();
+      success(`Copied ${styled(String(copied.length), C.bold)} new file${copied.length !== 1 ? 's' : ''}`);
+    }
+
+    if (skipped.length) {
+      line();
+      info(`Skipped ${skipped.length} file${skipped.length !== 1 ? 's' : ''} (no merge markers):`);
+      for (const file of skipped) item(file, true);
+    }
+
+    if (toMerge.length) {
+      line();
+      task('🔀 Merging existing files...');
+      const {merged, failed, unchanged} = mergeFiles(toMerge);
+      divider();
+      if (merged.length) success(`Successfully merged ${styled(String(merged.length), C.bold)} file${merged.length !== 1 ? 's' : ''}`);
+      if (unchanged.length) info(`${unchanged.length} file${unchanged.length !== 1 ? 's' : ''} unchanged (content already exists)`);
+      if (failed.length) {
+        line();
+        warn(`${failed.length} file${failed.length !== 1 ? 's' : ''} failed to merge`);
+        warn('Please review manually:');
+        for (const file of failed) item(file);
+      }
+    }
+
+    markAddonInstalled(addonName);
+    installed.add(addonName);
+    line();
+    success(styled(`${addonName} installed!`, C.bold, C.green), true);
+    line();
   } finally {
     cleanupPath(tempDir);
   }
@@ -534,9 +640,11 @@ const main = async () => {
     process.exit(1);
   }
 
-  let version;
+  let version, installed;
   try {
-    version = getSimplVersion();
+    const config = getSimplConfig();
+    version = config.version;
+    installed = new Set(config.addons || []);
   } catch (err) {
     line();
     error(err.message);
@@ -585,48 +693,7 @@ const main = async () => {
     addonName = await promptAddon(addons);
   }
 
-  box(`Installing: ${C.cyan}${addonName}${C.reset} ${C.dim}(v${version})${C.reset}`);
-  line();
-  task(`📦 Downloading ${C.cyan}${addonName}${C.reset} add-on...`);
-
-  let copied, skipped, toMerge;
-  try {
-    ({copied, skipped, toMerge} = await downloadAddon(addonName, version, process.cwd(), parsed.local));
-  } catch (err) {
-    line();
-    error('Installation failed');
-    if (err.message === 'CDN server is currently unreachable') info('The CDN server is currently unavailable. Please try again later.');
-    else if (err.message.includes('Local release not found')) info(err.message);
-    else info('Please verify the add-on exists and try again');
-    line();
-    process.exit(1);
-  }
-
-  if (copied.length) {
-    line();
-    success(`Copied ${styled(String(copied.length), C.bold)} new file${copied.length !== 1 ? 's' : ''}`);
-  }
-
-  if (skipped.length) {
-    line();
-    info(`Skipped ${skipped.length} file${skipped.length !== 1 ? 's' : ''} (no merge markers):`);
-    for (const file of skipped) item(file, true);
-  }
-
-  if (toMerge.length) {
-    line();
-    task('🔀 Merging existing files...');
-    const {merged, failed, unchanged} = mergeFiles(toMerge);
-    divider();
-    if (merged.length) success(`Successfully merged ${styled(String(merged.length), C.bold)} file${merged.length !== 1 ? 's' : ''}`);
-    if (unchanged.length) info(`${unchanged.length} file${unchanged.length !== 1 ? 's' : ''} unchanged (content already exists)`);
-    if (failed.length) {
-      line();
-      warn(`${failed.length} file${failed.length !== 1 ? 's' : ''} failed to merge`);
-      warn('Please review manually:');
-      for (const file of failed) item(file);
-    }
-  }
+  await installAddon(addonName, version, parsed.local, installed);
 
   line();
   success(styled('Installation complete!', C.bold, C.green), true);
